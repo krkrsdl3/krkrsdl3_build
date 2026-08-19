@@ -1,12 +1,13 @@
 # 介绍
 
-krkrsdl3的构建系统仓库，目前支持windows/linux/android/WebAssembly/HarmonyOS系统。
+krkrsdl3的构建系统仓库，目前支持windows/linux/android/WebAssembly/HarmonyOS系统/iOS系统。
 
 # 目录结构说明
 
 ```
 📁android/    # 安卓工程文件夹
 📁ohos/       # 鸿蒙工程文件夹
+📁iOS/       # iOS工程文件夹
 📁emscripten/ # wasm依赖外壳
 📁cmake/        # cmake编译示例
 ├── 📄 cmake_console.txt # tjs2编译脚本
