@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en-us">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>krkrsdl3 - Kirikiri SDL3 Engine (WASM)</title>
+    <!-- 线程支持检查（pthreads 需要 SharedArrayBuffer） -->
+    <script>
+        if (typeof SharedArrayBuffer === 'undefined' && typeof crossOriginIsolated === 'undefined') {
+            // 完全不支持 SharedArrayBuffer，显示错误
+            document.write('<div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#0f0f1a;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#e94560;font-family:sans-serif;padding:2em;text-align:center;">');
+            document.write('<h2 style="margin-bottom:1em;">⚠️ 浏览器不支持 SharedArrayBuffer</h2>');
+            document.write('<p style="color:#999;max-width:600px;line-height:1.6;">');
+            document.write('此页面需要 SharedArrayBuffer 支持（用于多线程音频解码）。<br><br>');
+            document.write('请确保：<br>');
+            document.write('1. 使用支持 SharedArrayBuffer 的现代浏览器（Chrome 90+ / Firefox 90+）<br>');
+            document.write('2. 服务器设置了正确的 COOP/COEP 响应头：<br>');
+            document.write('<code style="display:block;background:#222;padding:8px;margin:8px 0;border-radius:4px;font-size:0.85em;">');
+            document.write('Cross-Origin-Opener-Policy: same-origin<br>');
+            document.write('Cross-Origin-Embedder-Policy: require-corp');
+            document.write('</code>');
+            document.write('</p>');
+            document.write('</div>');
+        }
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0f0f1a;
+            color: #ccc;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden; height: 100vh; width: 100vw;
+        }
+        #loading {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            z-index: 1000; transition: opacity 0.8s ease;
+        }
+        #loading.hidden { opacity: 0; pointer-events: none; }
+        #loading .logo {
+            font-size: 2.5em; font-weight: 800;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin-bottom: 0.3em; letter-spacing: 2px;
+        }
+        #loading .subtitle { color: #666; margin-bottom: 2em; font-size: 0.9em; }
+        #progress-wrap {
+            width: 320px; height: 4px; background: #222; border-radius: 2px; overflow: hidden;
+        }
+        #progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #e94560, #ff6b6b); transition: width 0.3s ease; }
+        #status-text { margin-top: 1.2em; font-size: 0.85em; color: #555; min-height: 1.2em; }
+        .spinner {
+            width: 24px; height: 24px; margin-top: 20px;
+            border: 3px solid #333; border-top-color: #e94560;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        canvas {
+            display: block;
+            position: fixed; top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            object-fit: contain;
+            image-rendering: auto;
+            z-index: 100;
+            pointer-events: auto;
+        }
+        #error-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 2000;
+            flex-direction: column; align-items: center; justify-content: center;
+        }
+        #error-overlay.show { display: flex; }
+        #error-overlay h2 { color: #e94560; margin-bottom: 0.5em; font-size: 1.5em; }
+        #error-overlay p { color: #999; max-width: 500px; text-align: center; line-height: 1.5; }
+        #error-overlay .btn {
+            margin-top: 2em; padding: 0.7em 2em; background: #e94560; color: #fff;
+            border: none; border-radius: 4px; cursor: pointer; font-size: 1em;
+        }
+        #error-overlay .btn:hover { background: #d63850; }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="logo">krkrsdl3</div>
+        <div class="subtitle">Kirikiri SDL3 Engine · WebAssembly</div>
+        <div id="progress-wrap"><div id="progress-fill"></div></div>
+        <div id="status-text">Initializing...</div>
+        <div class="spinner"></div>
+    </div>
+    <div id="error-overlay">
+        <h2>Failed to load</h2>
+        <p id="error-message">An unknown error occurred. Please check the console for details.</p>
+        <button class="btn" onclick="location.reload()">Reload</button>
+    </div>
+    <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    <div id="wasm-video-wrap" style="visibility:hidden;opacity:0;position:fixed;top:0;left:0;width:100%;height:100%;z-index:999;pointer-events:none;">
+        <video id="wasm-video" style="width:100%;height:100%;background:#000;object-fit:cover;pointer-events:none;" muted playsinline preload="auto" disableRemotePlayback></video>
+    </div>
+
+    <script>
+        // ── 全局日志收集器 ────────────────────────────────────────────────
+        // 在页面上显示日志，便于调试
+        var logPanel = null;
+        var logVisible = false;
+        function toggleLog(show) {
+            logVisible = show !== undefined ? show : !logVisible;
+            if (logPanel) logPanel.style.display = logVisible ? 'block' : 'none';
+            if (logToggle) logToggle.textContent = logVisible ? '▼ 日志' : '▲ 日志';
+        }
+        function appendLog(level, args) {
+            var text = Array.prototype.join.call(args, ' ');
+            console[level].apply(console, args);
+            if (!logPanel) {
+                logPanel = document.createElement('div');
+                logPanel.id = 'log-panel';
+                logPanel.style.cssText = 'position:fixed;bottom:36px;right:8px;width:480px;max-width:90vw;max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:11px;padding:6px;border-radius:4px;z-index:3000;display:none;';
+                document.body.appendChild(logPanel);
+
+                // ── 日志切换按钮 ──────────────────────────────────────────
+                logToggle = document.createElement('div');
+                logToggle.id = 'log-toggle';
+                logToggle.style.cssText = 'position:fixed;bottom:8px;right:8px;padding:4px 10px;background:rgba(0,0,0,0.5);color:#666;font-family:monospace;font-size:11px;border-radius:4px;cursor:pointer;z-index:3001;user-select:none;';
+                logToggle.textContent = '📋 日志';
+                logToggle.onclick = function() { toggleLog(); };
+                document.body.appendChild(logToggle);
+
+                // ── 存档导入/导出按钮栏 ──────────────────────────────────
+                var btnDiv = document.createElement('div');
+                btnDiv.style.cssText = 'position:sticky;top:0;z-index:1;padding:4px 0;border-bottom:1px solid #333;margin-bottom:4px;display:flex;gap:4px;background:rgba(0,0,0,0.95);';
+                btnDiv.innerHTML =
+                    '<button id="btn-export" style="padding:2px 6px;background:#1a3a2a;color:#8f8;border:1px solid #2a5a3a;border-radius:3px;cursor:pointer;font-size:10px;">📤 导出存档</button>' +
+                    '<button id="btn-import" style="padding:2px 6px;background:#3a2a1a;color:#f88;border:1px solid #5a3a2a;border-radius:3px;cursor:pointer;font-size:10px;">📥 导入存档</button>' +
+                    '<input id="file-import" type="file" accept=".zip" style="display:none">';
+                logPanel.appendChild(btnDiv);
+
+                // ── ZIP 工具 ──────────────────────────────────────────────
+                initZipTools();
+            }
+            var entry = document.createElement('div');
+            entry.textContent = '[' + level + '] ' + text;
+            entry.style.color = level === 'error' ? '#e94560' : '#0f0';
+            logPanel.appendChild(entry);
+            logPanel.scrollTop = logPanel.scrollHeight;
+        }
+
+        // ── ZIP 工具（初始化一次）─────────────────────────────────────────
+        function initZipTools() {
+            function crc32(data) {
+                var table = crc32.table || (crc32.table = makeCRC32Table());
+                var c = 0xFFFFFFFF;
+                for (var i = 0; i < data.length; i++) c = table[(c ^ data[i]) & 0xFF] ^ (c >>> 8);
+                return (c ^ 0xFFFFFFFF) >>> 0;
+            }
+            function makeCRC32Table() {
+                var t = new Uint32Array(256);
+                for (var i = 0; i < 256; i++) {
+                    var c = i;
+                    for (var j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+                    t[i] = c;
+                }
+                return t;
+            }
+            function makeZip(files) { // files: [{name, data:Uint8Array}]
+                var localOffsets = [], localHeaders = [], centralEntries = [];
+                var offset = 0;
+                for (var i = 0; i < files.length; i++) {
+                    var name = files[i].name, data = files[i].data;
+                    var nameU = new Uint8Array(name.length);
+                    for (var j = 0; j < name.length; j++) nameU[j] = name.charCodeAt(j) & 0xFF;
+                    var crc = crc32(data);
+                    var hdr = new ArrayBuffer(30);
+                    var v = new DataView(hdr);
+                    v.setUint32(0, 0x04034b50, true); // sig
+                    v.setUint16(4, 20, true); // version
+                    v.setUint16(6, 0, true); // flags
+                    v.setUint16(8, 0, true); // compression: stored
+                    v.setUint16(10, 0, true); // mod time
+                    v.setUint16(12, 0, true); // mod date
+                    v.setUint32(14, crc, true);
+                    v.setUint32(18, data.length, true); // compressed
+                    v.setUint32(22, data.length, true); // uncompressed
+                    v.setUint16(26, name.length, true);
+                    v.setUint16(28, 0, true); // extra len
+                    localOffsets.push(offset);
+                    offset += 30 + name.length + data.length;
+                    localHeaders.push(new Uint8Array(hdr));
+                    // central dir entry
+                    var cen = new ArrayBuffer(46);
+                    var cv = new DataView(cen);
+                    cv.setUint32(0, 0x02014b50, true);
+                    cv.setUint16(4, 20, true);
+                    cv.setUint16(6, 20, true);
+                    cv.setUint16(8, 0, true);
+                    cv.setUint16(10, 0, true);
+                    cv.setUint16(12, 0, true);
+                    cv.setUint16(14, 0, true);
+                    cv.setUint32(16, crc, true);
+                    cv.setUint32(20, data.length, true);
+                    cv.setUint32(24, data.length, true);
+                    cv.setUint16(28, name.length, true);
+                    cv.setUint16(30, 0, true);
+                    cv.setUint16(32, 0, true);
+                    cv.setUint16(34, 0, true);
+                    cv.setUint16(36, 0, true);
+                    cv.setUint32(38, 0, true);
+                    cv.setUint32(42, localOffsets[i], true);
+                    centralEntries.push({ cen: new Uint8Array(cen), name: nameU });
+                }
+                // Write local file headers + data
+                var parts = [];
+                for (var i = 0; i < files.length; i++) {
+                    parts.push(localHeaders[i]);
+                    var nu = new Uint8Array(files[i].name.length);
+                    for (var j = 0; j < files[i].name.length; j++) nu[j] = files[i].name.charCodeAt(j) & 0xFF;
+                    parts.push(nu);
+                    parts.push(files[i].data);
+                }
+                // Central directory
+                var cenOffset = offset;
+                for (var i = 0; i < centralEntries.length; i++) {
+                    parts.push(centralEntries[i].cen);
+                    parts.push(centralEntries[i].name);
+                }
+                var cenEnd = offset;
+                for (var i = 0; i < files.length; i++) cenEnd += 46 + files[i].name.length;
+                // EOCD
+                var eocd = new ArrayBuffer(22);
+                var ev = new DataView(eocd);
+                ev.setUint32(0, 0x06054b50, true);
+                ev.setUint16(4, 0, true);
+                ev.setUint16(6, 0, true);
+                ev.setUint16(8, files.length, true);
+                ev.setUint16(10, files.length, true);
+                ev.setUint32(12, cenEnd - cenOffset, true);
+                ev.setUint32(16, cenOffset, true);
+                ev.setUint16(20, 0, true);
+                parts.push(new Uint8Array(eocd));
+                // Concatenate
+                var total = 0;
+                for (var i = 0; i < parts.length; i++) total += parts[i].length;
+                var result = new Uint8Array(total);
+                var pos = 0;
+                for (var i = 0; i < parts.length; i++) { result.set(parts[i], pos); pos += parts[i].length; }
+                return result;
+            }
+            async function parseZip(buf) { // returns [{name, data:Uint8Array}]
+                var dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+                if (dv.getUint32(0, true) !== 0x04034b50) throw new Error('Not a ZIP file');
+                var files = [], pos = 0;
+                while (pos + 30 <= buf.length) {
+                    if (dv.getUint32(pos, true) !== 0x04034b50) break;
+                    var nameLen = dv.getUint16(pos + 26, true);
+                    var extraLen = dv.getUint16(pos + 28, true);
+                    var comp = dv.getUint16(pos + 8, true);
+                    var compSize = dv.getUint32(pos + 18, true);
+                    var uncompSize = dv.getUint32(pos + 22, true);
+                    var hdrSize = 30 + nameLen + extraLen;
+                    var nameBytes = buf.slice(pos + 30, pos + 30 + nameLen);
+                    var name = '';
+                    for (var j = 0; j < nameBytes.length; j++) name += String.fromCharCode(nameBytes[j]);
+                    var dataStart = pos + hdrSize;
+                    if (comp === 0) {
+                        files.push({ name: name, data: buf.slice(dataStart, dataStart + uncompSize) });
+                        pos = dataStart + compSize;
+                    } else if (comp === 8 && typeof DecompressionStream !== 'undefined') {
+                        // DEFLATE — use browser's native decompression
+                        var raw = buf.slice(dataStart, dataStart + compSize);
+                        var ds = new DecompressionStream('deflate-raw');
+                        var writer = ds.writable.getWriter();
+                        writer.write(raw);
+                        writer.close();
+                        var reader = ds.readable.getReader();
+                        var chunks = [];
+                        while (true) {
+                            var r = await reader.read();
+                            if (r.done) break;
+                            chunks.push(r.value);
+                        }
+                        var total = 0;
+                        for (var k = 0; k < chunks.length; k++) total += chunks[k].length;
+                        var out = new Uint8Array(total);
+                        var off = 0;
+                        for (var k = 0; k < chunks.length; k++) { out.set(chunks[k], off); off += chunks[k].length; }
+                        files.push({ name: name, data: out });
+                        pos = dataStart + compSize;
+                    } else {
+                        throw new Error('Compressed ZIP entries not supported: ' + name);
+                    }
+                }
+                return files;
+            }
+
+                document.getElementById('btn-export').onclick = async function() {
+                    try {
+                        var entries = [];
+                        // 通过 FS API 遍历 /savedata/ 下的所有文件
+                        function walkDir(dir) {
+                            var list;
+                            try { list = Module.FS.readdir(dir); } catch(e) { return; }
+                            for (var i = 0; i < list.length; i++) {
+                                if (list[i] === '.' || list[i] === '..') continue;
+                                var full = dir + '/' + list[i];
+                                var st;
+                                try { st = Module.FS.stat(full); } catch(e) { continue; }
+                                if (st && (st.mode & 0x4000))
+                                    walkDir(full);
+                                else
+                                    entries.push({name: full, data: Module.FS.readFile(full)});
+                            }
+                        }
+                        walkDir('/savedata');
+                        if (entries.length === 0) { appendLog('log', ['没有存档文件']); return; }
+                        var zipData = makeZip(entries);
+                        var blob = new Blob([zipData], {type:'application/zip'});
+                        var a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = 'krkrsdl3_savedata_' + new Date().toISOString().slice(0,10) + '.zip';
+                        a.click();
+                        appendLog('log', ['导出完成，共', entries.length, '个存档文件']);
+                    } catch(e) { appendLog('error', ['导出失败:', e.toString()]); }
+                };
+
+                document.getElementById('btn-import').onclick = function() {
+                    document.getElementById('file-import').click();
+                };
+                document.getElementById('file-import').onchange = async function(e) {
+                    var file = e.target.files[0];
+                    if (!file) return;
+                    try {
+                        var buf = new Uint8Array(await file.arrayBuffer());
+                        var files = await parseZip(buf);
+                        var count = 0;
+                        for (var i = 0; i < files.length; i++) {
+                            var p = files[i].name;
+                            if (p.indexOf('/savedata/') !== 0 && p !== '/savedata') continue;
+                            var parts = p.split('/');
+                            var dir = '';
+                            for (var d = 0; d < parts.length - 1; d++) {
+                                dir += (d ? '/' : '') + parts[d];
+                                try { Module.FS.mkdir(dir); } catch(e) {}
+                            }
+                            try { Module.FS.unlink(p); } catch(e) {}
+                            Module.FS.writeFile(p, files[i].data);
+                            count++;
+                        }
+                        // 一次性 sync
+                        if (Module && Module.FS && Module.FS.syncfs)
+                            await new Promise(function(resolve, reject) {
+                                Module.FS.syncfs(false, function(err) {
+                                    if (err) reject(err); else resolve();
+                                });
+                            });
+                        appendLog('log', ['导入完成，共', count, '个存档文件']);
+                    } catch(err) { appendLog('error', ['导入失败:', err.toString()]); }
+                    e.target.value = '';
+                };
+        };
+ 
+        var statusEl = document.getElementById('status-text');
+        var fillEl = document.getElementById('progress-fill');
+        var loadingEl = document.getElementById('loading');
+        var errorOverlay = document.getElementById('error-overlay');
+        var errorMsgEl = document.getElementById('error-message');
+        var canvasEl = document.getElementById('canvas');
+
+        function updateProgress(msg, pct) {
+            statusEl.textContent = msg || '';
+            if (fillEl && typeof pct === 'number') {
+                fillEl.style.width = Math.min(pct, 100) + '%';
+            }
+        }
+
+        function showError(msg) {
+            errorMsgEl.innerHTML = msg || 'Unknown error';
+            errorOverlay.classList.add('show');
+            loadingEl.classList.add('hidden');
+            appendLog('error', [msg]);
+        }
+
+        // Handle WebGL context loss
+        canvasEl.addEventListener('webglcontextlost', function(e) {
+            showError('WebGL context lost. Your browser or GPU may not support WebGL 2.0.');
+            e.preventDefault();
+        }, false);
+
+        // ── 浏览器音频解锁（拦截所有 AudioContext，用户交互时唤醒）──
+        // SDL3 在内部创建 AudioContext 且不暴露到 Module.audioContext，
+        // 所以我们需要 monkey-patch AudioContext 构造函数来跟踪所有实例。
+        var _audioContexts = [];
+        var _origAudioContext = (typeof AudioContext !== 'undefined') ? AudioContext : null;
+        var _origWebkitAudioContext = (typeof webkitAudioContext !== 'undefined') ? webkitAudioContext : null;
+
+        function PatchedAudioContext() {
+            var ctx = new _origAudioContext(arguments[0]);
+            _audioContexts.push(ctx);
+            console.log('[audio] AudioContext created, state:', ctx.state);
+            return ctx;
+        }
+        PatchedAudioContext.prototype = _origAudioContext ? _origAudioContext.prototype : {};
+        if (_origAudioContext) {
+            for (var k in _origAudioContext) {
+                if (_origAudioContext.hasOwnProperty(k)) PatchedAudioContext[k] = _origAudioContext[k];
+            }
+            window.AudioContext = PatchedAudioContext;
+        }
+
+        function PatchedWebkitAudioContext() {
+            var ctx = new _origWebkitAudioContext(arguments[0]);
+            _audioContexts.push(ctx);
+            console.log('[audio] webkitAudioContext created, state:', ctx.state);
+            return ctx;
+        }
+        PatchedWebkitAudioContext.prototype = _origWebkitAudioContext ? _origWebkitAudioContext.prototype : {};
+        if (_origWebkitAudioContext) {
+            for (var k in _origWebkitAudioContext) {
+                if (_origWebkitAudioContext.hasOwnProperty(k)) PatchedWebkitAudioContext[k] = _origWebkitAudioContext[k];
+            }
+            window.webkitAudioContext = PatchedWebkitAudioContext;
+        }
+
+        function unlockAudio() {
+            var anyResumed = false;
+            var promises = [];
+
+            // 1. 唤醒所有已知的 AudioContext
+            for (var i = 0; i < _audioContexts.length; i++) {
+                var ctx = _audioContexts[i];
+                if (!ctx) { console.log('[audio] ctx[' + i + '] is null'); continue; }
+                var st = typeof ctx.state !== 'undefined' ? ctx.state : 'unknown';
+                if (st === 'suspended') {
+                    var p = ctx.resume();
+                    if (p && p.then) {
+                        p.then(function() { console.log('[audio] ctx[' + i + '] resume OK'); anyResumed = true; })
+                         .catch(function(e) { console.log('[audio] ctx[' + i + '] resume FAILED:', e.message); });
+                        promises.push(p);
+                    } else { anyResumed = true; console.log('[audio] ctx[' + i + '] resume called (sync)'); }
+                } else if (st === 'running') {
+                    anyResumed = true;
+                }
+            }
+
+            // 2. SDL3 内部 AudioContext
+            try {
+                if (typeof Module !== 'undefined' && Module.SDL3) {
+                    var ctx = Module.SDL3.audioContext;
+                    if (ctx) {
+                        var st = typeof ctx.state !== 'undefined' ? ctx.state : 'unknown';
+                        if (st === 'suspended') {
+                            var p = ctx.resume();
+                            if (p && p.then) {
+                                p.then(function() { console.log('[audio] SDL3 ctx resume OK'); anyResumed = true; })
+                                 .catch(function(e) { console.log('[audio] SDL3 ctx resume FAILED:', e.message); });
+                                promises.push(p);
+                            } else { anyResumed = true; }
+                        } else if (st === 'running') {
+                            anyResumed = true;
+                        }
+                    }
+                }
+            } catch(e) { console.log('[audio] SDL3 check error:', e); }
+
+            // 3. 额外检查 Module 暴露的其他实例
+            try {
+                if (typeof Module !== 'undefined') {
+                    var candidates = ['audioContext', 'webaudio', 'AudioContext', 'WebAudio'];
+                    for (var ci = 0; ci < candidates.length; ci++) {
+                        var key = candidates[ci];
+                        var ctx = Module[key];
+                        if (ctx) {
+                            var st = typeof ctx.state !== 'undefined' ? ctx.state : 'unknown';
+                            console.log('[audio] Module.' + key + ' state=' + st);
+                            if (st === 'suspended') {
+                                var p = ctx.resume();
+                                if (p && p.then) {
+                                    p.then(function() { console.log('[audio] Module.' + key + ' resume OK'); })
+                                     .catch(function(e) { console.log('[audio] Module.' + key + ' resume FAILED:', e.message); });
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch(e) { console.log('[audio] Module scan error:', e); }
+
+            // 4. 如果没有任何 AudioContext，创建 dummy 占位
+            if (_audioContexts.length === 0) {
+                try {
+                    var CTor = _origAudioContext || window.AudioContext;
+                    if (typeof CTor !== 'undefined') {
+                        var dummy = new CTor();
+                        _audioContexts.push(dummy);
+                    }
+                } catch(e) { console.log('[audio] Failed dummy AudioContext:', e.message); }
+            }
+        }
+        document.addEventListener('pointerdown', unlockAudio);
+        document.addEventListener('keydown', function(e) {
+            unlockAudio();
+            if (e.key === '`' || e.key === '~') {
+                toggleLog();
+                e.preventDefault();
+            }
+        });
+
+        // ── 拦截全局未捕获异常 ──────────────────────────────────────────
+        window.addEventListener('error', function(e) {
+            var detail = '';
+            if (e.error) {
+                try { detail = e.error.toString() + (e.error.stack ? '\n' + e.error.stack : ''); } catch(_) {}
+            }
+            if (!detail) detail = e.message || 'Unknown error';
+            appendLog('error', ['Global error:', detail]);
+            // 如果是 TJS 异常，尝试额外提取信息
+            if (detail.indexOf('eTJS') >= 0 || detail.indexOf('eTJSError') >= 0) {
+                detail += '<br><br>This is a TJS script engine error. '
+                    + 'The game script may be incompatible or missing required files.<br>'
+                    + 'Check the log panel for engine output before this error.';
+            }
+            showError('Uncaught error: ' + detail.replace(/\n/g, '<br>'));
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+            var detail = '';
+            try { detail = e.reason.toString() + (e.reason.stack ? '\n' + e.reason.stack : ''); } catch(_) {}
+            appendLog('error', ['Unhandled promise rejection:', detail]);
+        });
+
+        // ── 命令行参数解析 ──────────────────────────────────────────────
+        // Emscripten 会自动在 argv 前面插入程序名作为 argv[0]，
+        // 所以我们只提供 argv[1] 及以后的参数。
+        //
+        // 重要：WASM 运行在浏览器虚拟文件系统中，无法直接访问 Windows 本地路径！
+        // 游戏文件（.xp3）必须通过以下方式提供：
+        //   1. 放到服务器同目录，用 ?game=data.xp3
+        //   2. 或用 ?xp3=URL 指定下载地址（引擎启动前自动下载）
+        //
+        // 支持两种参数方式：
+        //   1. ?args=/Res,-render=opengl
+        //   2. ?game=/Res&render=opengl&debug=1
+        //   3. 默认：["/Res"]
+
+        function normalizePath(str) {
+            return decodeURIComponent(str).replace(/\\/g, '/');
+        }
+
+        function buildArguments() {
+            var urlParams = new URLSearchParams(window.location.search);
+
+            var argsStr = urlParams.get('args');
+            if (argsStr) {
+                var args = argsStr.split(',');
+                for (var i = 0; i < args.length; i++) args[i] = normalizePath(args[i]);
+                appendLog('log', ['Arguments from ?args=:', JSON.stringify(args)]);
+                return args;
+            }
+
+            var argv = [];
+            var game = urlParams.get('game');
+            if (game) {
+                game = normalizePath(game);
+                if (game.indexOf('/') !== 0 && game.indexOf(':') === -1) game = '/' + game;
+                argv.push(game);
+            } else {
+                argv.push("/data.xp3");
+            }
+
+            if (urlParams.get('render')) argv.push('-render=' + urlParams.get('render'));
+            if (urlParams.get('debug') === '1' || urlParams.get('debug') === 'yes') argv.push('-debug');
+            if (urlParams.get('window')) argv.push('-window=' + normalizePath(urlParams.get('window')));
+            if (urlParams.get('scale')) argv.push('-scale=' + urlParams.get('scale'));
+            if (urlParams.get('fullscreen') === '1' || urlParams.get('fullscreen') === 'yes') argv.push('-fullscreen');
+
+            appendLog('log', ['Arguments from query params:', JSON.stringify(argv)]);
+            return argv;
+        }
+
+        // ── 游戏数据 (xp3) 处理 ────────────────────────────────────────
+        // 策略：在 Emscripten 模块加载前，先用 async fetch 预下载所有 xp3
+        // 文件。下载完成后才加载 Emscripten .js，确保引擎启动时文件已在
+        // MEMFS 中。
+        //
+        // 支持两种参数方式：
+        //     1. ?game=data.xp3       → 自动预载 data.xp3 等已知文件
+        //     2. ?args=/Res,...       → 自定义参数列表
+        //     3. 默认                  → ["/Res"]
+
+        var urlParams = new URLSearchParams(window.location.search);
+        var gameArgs = buildArguments();
+        var preload = urlParams.get('preload') === '1';
+
+        // ── 全量预下载（?preload=1）：提前把文件下到 MEMFS，read 直接从本地读 ──
+        //   不传 preload=1 则走 HTTP Range LazyLoad，不提前下载（默认）。
+        var preRunCallbacks = [];
+        var depName = null;
+
+        async function downloadAndWriteFiles() {
+            var fileList = [];
+            try {
+                var resp = await fetch('filelist.json');
+                if (resp.ok) {
+                    fileList = await resp.json();
+                    appendLog('log', ['Loaded', fileList.length, 'files from filelist.json']);
+                } else {
+                    throw new Error('HTTP ' + resp.status);
+                }
+            } catch(e) {
+                appendLog('log', ['filelist.json not found:', e.toString()]);
+                return;
+            }
+
+            for (var i = 0; i < fileList.length; i++) {
+                var fname = fileList[i];
+                try {
+                    updateProgress('Downloading ' + fname + '...', (i / fileList.length) * 50);
+                    var resp = await fetch(fname);
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    var buf = await resp.arrayBuffer();
+
+                    // 自动创建所有父目录，完全复刻 filelist.json 的目录结构
+                    var parts = fname.split('/');
+                    var name = parts.pop();
+                    var dir = '';
+                    for (var d = 0; d < parts.length; d++) {
+                        dir += '/' + parts[d];
+                        try { Module.FS.mkdir(dir); } catch(e) {}
+                    }
+                    dir = dir || '/';
+
+                    // 写入 MEMFS
+                    Module.FS_createDataFile(dir, name, new Uint8Array(buf), true, true, true);
+                    appendLog('log', ['Downloaded:', fname, '(' + buf.byteLength + ' bytes)']);
+                } catch (err) {
+                    appendLog('error', ['Download failed:', fname, err.toString()]);
+                }
+            }
+        }
+
+        if (preload) {
+            // 全量加载模式：preRun 里下载+写入 MEMFS，完成后才启动引擎
+            depName = 'game-data-load';
+            preRunCallbacks.push(function() {
+                // IDBFS mount for savedata
+                try {
+                    Module.FS.mkdir('/savedata');
+                    Module.FS.mount(Module.FS.filesystems.IDBFS, {}, '/savedata');
+                    Module.FS.syncfs(true, function(err) {
+                        if (err) appendLog('error', ['IDBFS sync load failed:', err]);
+                    });
+                } catch(e) { appendLog('log', ['IDBFS mount skipped:', e.message]); }
+
+                Module.addRunDependency(depName);
+                downloadAndWriteFiles().then(function() {
+                    updateProgress('All game data ready!', 90);
+                    Module.removeRunDependency(depName);
+                }).catch(function(err) {
+                    appendLog('error', ['Preload failed:', err.toString()]);
+                    Module.removeRunDependency(depName);
+                });
+            });
+        } else {
+            // HTTP Range LazyLoad：仅挂载 IDBFS，不下载游戏文件
+            preRunCallbacks.push(function() {
+                try {
+                    Module.FS.mkdir('/savedata');
+                    Module.FS.mount(Module.FS.filesystems.IDBFS, {}, '/savedata');
+                    Module.FS.syncfs(true, function(err) {
+                        if (err) appendLog('error', ['IDBFS sync load failed:', err]);
+                        else appendLog('log', ['IDBFS: savedata loaded']);
+                    });
+                } catch(e) { appendLog('log', ['IDBFS mount skipped:', e.message]); }
+            });
+        }
+
+        var _engineRunning = false;
+        window.Module = {
+            canvas: canvasEl,
+            arguments: gameArgs,
+            preRun: preRunCallbacks,
+            print: function() { appendLog('log', arguments); },
+            printErr: function() { appendLog('log', arguments); },
+            setStatus: function(text) {
+                if (!text) { loadingEl.classList.add('hidden'); return; }
+                var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                if (m) {
+                    var pct = parseFloat(m[2]) / parseFloat(m[4]) * 100;
+                    updateProgress(m[1].trim(), pct);
+                } else { updateProgress(text, 80); }
+            },
+            monitorRunDependencies: function(left) {},
+            onRuntimeInitialized: function() {
+                _engineRunning = true;
+                // Periodic IDBFS sync for savedata persistence
+                setInterval(function() {
+                    try {
+                        if (Module && Module.FS && Module.FS.syncfs)
+                            Module.FS.syncfs(false, function(){});
+                    } catch(e) {}
+                }, 5000);
+            },
+            onAbort: function(text) {
+                showError(text || 'The application aborted unexpectedly.');
+            }
+        };
+
+        // ── 页面刷新前释放 wasm 内存 + 同步存档到 IDB ──────────────────
+        window.addEventListener('beforeunload', function() {
+            try {
+                // Sync IDBFS save data
+                if (Module && Module.FS && Module.FS.syncfs)
+                    Module.FS.syncfs(false, function(){});
+                // Terminate pthread workers to free SharedArrayBuffer
+                if (Module && Module.PThread)
+                    Module.PThread.terminateAllThreads();
+                if (Module && Module.exit)
+                    Module.exit(0);
+            } catch(e) {}
+            window.Module = null;
+            _engineRunning = false;
+        });
+
+        // ── 加载超时保护 ────────────────────────────────────────────────
+        setTimeout(function() {
+            if (!loadingEl.classList.contains('hidden')) {
+                var isFile = window.location.protocol === 'file:';
+                var msg = 'Loading timed out.';
+                if (isFile) {
+                    msg += '<br><br>⚠️ You opened this file directly from the filesystem (<code>file://</code>).<br>'
+                         + 'Emscripten requires HTTP to load the .data and .wasm files.<br><br>'
+                         + 'Please serve the directory with a web server, e.g.:<br>'
+                         + '<code>python -m http.server 8080</code>';
+                } else {
+                    msg += '<br><br>Check the log panel (bottom of screen) or browser console (F12) for details.<br>'
+                         + 'Make sure <code>krkrsdl3.data</code>, <code>krkrsdl3.wasm</code>, '
+                         + '<code>krkrsdl3.js</code> and <code>krkrsdl3.worker.js</code> are in the same directory.<br>'
+                         + 'Also ensure the server sends these response headers:<br>'
+                         + '<code style="font-size:0.85em;">Cross-Origin-Opener-Policy: same-origin<br>Cross-Origin-Embedder-Policy: require-corp</code>';
+                }
+                showError(msg);
+            }
+        }, 120000); // 2 分钟超时（游戏数据较大）
+    </script>
+    {{{ SCRIPT }}}
+    </script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+    "dependencies": [
+        "oniguruma",
+        "zlib",
+        {
+            "name" : "ffmpeg",
+            "platform": "!emscripten"
+        },
+        "libpng",
+        "libwebp",
+        "libjpeg-turbo",
+        "libvorbis",
+        "opusfile",
+        "freetype",
+        "plutovg",
+
+        "sdl2",
+        "sdl2-ttf",
+        "sdl3",
+        "sdl3-ttf",
+        "glm",
+        {
+            "name": "glad",
+            "features": ["loader"],
+            "platform": "windows | linux"
+        },
+        {
+            "name": "glad",
+            "features": ["egl", "loader"],
+            "platform": "android | emscripten"
+        }
+    ],
+    "builtin-baseline": "8e8dfb4ba483886936ded5ca201b500b8d8b0096",
+    "overrides": []
+}

@@ -1,0 +1,35 @@
+#
+# 1.确定源文件
+#
+
+add_definitions(
+        -D_ONLYCONSOLE=1
+    )
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_tjs2.txt)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_environ.txt)
+set(KRKRSDL_SRC
+	${KRKRSDL_TJS2_SRC}
+    ${KRKRSDL_ENVIRON_CONSOLE_SRC}
+    )
+
+#
+# 2.确定目标文件
+#
+
+# 可执行文件
+if(LINUX OR WINDOWS)
+    add_executable(${PROJECT_NAME} ${KRKRSDL_SRC})
+else()
+    message(FATAL_ERROR "unsupported: ${CMAKE_SYSTEM_NAME}")
+endif()
+
+# 依赖头
+target_include_directories(${PROJECT_NAME} PUBLIC
+	${KRKRSDL_TJS2_PATH}
+	${KRKRSDL_ENVIRON_PATH}
+)
+
+# 依赖库
+find_package(oniguruma CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE oniguruma::onig)

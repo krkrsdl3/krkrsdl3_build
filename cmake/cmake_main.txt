@@ -1,0 +1,229 @@
+#
+# 1.确定源文件
+#
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_core.txt)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_environ.txt)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_plugins.txt)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_tjs2.txt)
+set(KRKRSDL_SRC
+    ${KRKRSDL_CORE_SRC}
+    ${KRKRSDL_ENVIRON_SRC}
+    ${KRKRSDL_PLUGINS_SRC}
+	${KRKRSDL_TJS2_SRC}
+    )
+
+if(USE_FFMPEG)
+    list(APPEND KRKRSDL_SRC ${KRKRSDL_CORE_FFMPEG_SRC})
+    add_definitions(-D_KRKRSDL3_USE_FFMPEG=1)
+endif()
+if(USE_SDL3)
+    add_definitions(-D_KRKRSDL3_USE_SDL3=1)
+endif()
+
+#
+# 2.确定目标文件
+#
+
+# 可执行文件
+if(ANDROID OR OHOS)
+    add_library(${PROJECT_NAME} SHARED ${KRKRSDL_SRC})
+elseif(EMSCRIPTEN)
+    # WASM: compile to .wasm with Emscripten
+    add_executable(${PROJECT_NAME} ${KRKRSDL_SRC})
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        SUFFIX ".html"
+        OUTPUT_NAME "index"
+    )
+    target_compile_options(${PROJECT_NAME} PRIVATE "-fexceptions" "-pthread")
+    target_link_options(${PROJECT_NAME} PRIVATE
+        "SHELL:-s USE_WEBGL2=1"
+        "SHELL:-s USE_LIBPNG=1"
+        "SHELL:-s USE_VORBIS=1"
+        "SHELL:-s USE_FREETYPE=1"
+        "SHELL:-s ASYNCIFY"
+        "SHELL:-s ASYNCIFY_STACK_SIZE=4194304"
+        "SHELL:-s ALLOW_MEMORY_GROWTH=1"
+        "SHELL:-s NO_EXIT_RUNTIME=1"
+        "SHELL:-s INITIAL_MEMORY=1024MB"
+        "SHELL:-s ALLOW_MEMORY_GROWTH=0"
+        "SHELL:-s NO_DISABLE_EXCEPTION_CATCHING=1"
+        "SHELL:-s USE_PTHREADS=1"
+        "SHELL:-s PTHREAD_POOL_SIZE=8"
+        "SHELL:-s STACK_SIZE=4MB"
+        "SHELL:-s EXPORTED_RUNTIME_METHODS=FS,GL,HEAP8,HEAP16,HEAP32,HEAPU8,HEAPF32,getValue,setValue,stringToUTF8,lengthBytesUTF8"
+        "SHELL:-s EXPORTED_FUNCTIONS=_main,_wasmIDBListCallback"
+        "SHELL:-lidbfs.js"
+        "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/emscripten/wasm_shell.html"
+        "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Res@/Res"
+    )
+elseif(LINUX OR WINDOWS)
+    add_executable(${PROJECT_NAME} ${KRKRSDL_SRC})
+else()
+    message(FATAL_ERROR "unsupported: ${CMAKE_SYSTEM_NAME}")
+endif()
+
+# 依赖头
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${KRKRSDL_CORE_PATH}/archive
+	${KRKRSDL_CORE_PATH}/main
+	${KRKRSDL_CORE_PATH}/media/font
+	${KRKRSDL_CORE_PATH}/media/image
+	${KRKRSDL_CORE_PATH}/media/movie
+	${KRKRSDL_CORE_PATH}/media/sound
+	${KRKRSDL_CORE_PATH}/msg
+	${KRKRSDL_CORE_PATH}/render
+    ${KRKRSDL_CORE_PATH}/script
+	${KRKRSDL_CORE_PATH}/utils
+    ${KRKRSDL_CORE_PATH}/utils/math
+	${KRKRSDL_ENVIRON_PATH}
+	${KRKRSDL_PLUGINS_PATH}
+	${KRKRSDL_TJS2_PATH}
+)
+
+# 依赖库
+if(OHOS)
+    # OHOS: use prebuilt deps from out/ohos/deps/install/
+    set(OHOS_DEPS "${CMAKE_SOURCE_DIR}/out/ohos/deps/install/${OHOS_ARCH}")
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        "${OHOS_DEPS}/include"
+        "${OHOS_DEPS}/include/freetype2"
+        "${OHOS_DEPS}/include/opus"
+    )
+
+    if(USE_FFMPEG)
+        target_include_directories(${PROJECT_NAME} PRIVATE "${OHOS_DEPS}/include")
+        target_link_directories(${PROJECT_NAME} PRIVATE "${OHOS_DEPS}/lib")
+        target_link_libraries(${PROJECT_NAME} PRIVATE
+            ${OHOS_DEPS}/lib/libavcodec.a
+            ${OHOS_DEPS}/lib/libavformat.a
+            ${OHOS_DEPS}/lib/libavutil.a
+            ${OHOS_DEPS}/lib/libswresample.a
+            ${OHOS_DEPS}/lib/libswscale.a
+        )
+    endif()
+
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        ${OHOS_DEPS}/lib/libfreetype.a
+        ${OHOS_DEPS}/lib/libpng16.a
+        ${OHOS_DEPS}/lib/libz.a
+        ${OHOS_DEPS}/lib/libjpeg.a
+        ${OHOS_DEPS}/lib/libturbojpeg.a
+        ${OHOS_DEPS}/lib/libwebp.a
+        ${OHOS_DEPS}/lib/libwebpdemux.a
+        ${OHOS_DEPS}/lib/libwebpdecoder.a
+        ${OHOS_DEPS}/lib/libwebpmux.a
+        ${OHOS_DEPS}/lib/libsharpyuv.a
+        ${OHOS_DEPS}/lib/libonig.a
+        ${OHOS_DEPS}/lib/libvorbis.a
+        ${OHOS_DEPS}/lib/libvorbisfile.a
+        ${OHOS_DEPS}/lib/libvorbisenc.a
+        ${OHOS_DEPS}/lib/libogg.a
+        ${OHOS_DEPS}/lib/libopus.a
+        ${OHOS_DEPS}/lib/libopusfile.a
+        ${OHOS_DEPS}/lib/libplutovg.a
+    )
+    # glad not needed — OHOS uses sysroot EGL/GLES3 directly
+elseif(USE_FFMPEG)
+    find_package(FFMPEG REQUIRED)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_INCLUDE_DIRS})
+    target_link_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_LIBRARY_DIRS})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${FFMPEG_LIBRARIES})
+endif()
+
+if(NOT OHOS)
+    if(NOT EMSCRIPTEN)
+        find_package(PNG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE PNG::PNG)
+
+        find_package(Freetype REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE Freetype::Freetype) # since CMake 3.10
+
+        find_package(glad CONFIG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE glad::glad)
+    endif()
+
+    find_package(glm CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm-header-only)
+
+    find_package(JPEG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE JPEG::JPEG)
+
+    find_package(libjpeg-turbo CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>)
+
+    if(NOT EMSCRIPTEN)
+        find_package(Vorbis CONFIG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE Vorbis::vorbis)
+
+        find_package(Vorbis CONFIG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE Vorbis::vorbisfile)
+
+        find_package(Vorbis CONFIG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE Vorbis::vorbisenc)
+    endif()
+
+    find_package(WebP CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE WebP::webp WebP::webpdecoder WebP::webpdemux)
+
+    find_package(oniguruma CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE oniguruma::onig)
+
+    find_package(Opus CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Opus::opus)
+
+    find_package(OpusFile CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpusFile::opusfile)
+
+    if(USE_SDL3)
+        find_package(SDL3 CONFIG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3)
+
+        find_package(SDL3_ttf CONFIG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE SDL3_ttf::SDL3_ttf)
+    else()
+        find_package(SDL2 CONFIG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE
+            $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+            $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+        )
+
+        find_package(SDL2_ttf CONFIG REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE
+            $<IF:$<TARGET_EXISTS:SDL2_ttf::SDL2_ttf>,SDL2_ttf::SDL2_ttf,SDL2_ttf::SDL2_ttf-static>
+        )
+    endif()
+
+    find_package(plutovg CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE plutovg::plutovg)
+endif()
+
+if(ANDROID)
+    # egl
+    target_link_libraries(${PROJECT_NAME} PRIVATE EGL GLESv3)
+    # System video player (MediaCodec)
+    target_link_libraries(${PROJECT_NAME} PRIVATE android mediandk)
+elseif(LINUX)
+    target_link_libraries(${PROJECT_NAME} PRIVATE GL)
+elseif(WINDOWS)
+    # System video player (Media Foundation)
+    target_link_libraries(${PROJECT_NAME} PRIVATE mfplat mfuuid mfreadwrite)
+elseif(OHOS)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        EGL GLESv3 native_window
+        hilog_ndk.z ace_napi.z ace_ndk.z ohaudio rawfile.z
+        native_media_codecbase native_media_core native_media_avsource native_media_avdemuxer
+        native_media_vdec native_media_adec native_media_avmuxer
+    )
+endif()
+
+#
+# 3. 完事后拷贝资源
+#
+
+if(LINUX OR WINDOWS)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/Res
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>/Res)
+endif()
