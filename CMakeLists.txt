@@ -64,6 +64,9 @@ endif()
 # 视频解码后端: ON=FFmpeg, OFF=系统API(MediaFoundation/MediaCodec)
 # 感觉没必要禁用，OFF的实现基本没用༼ ༎ຶ ෴ ༎ຶ༽
 option(USE_FFMPEG "Use FFmpeg for video/audio decoding" ON)
+# 图形后端编译选项
+option(USE_RENDER_GL "OpenGL 3.3+/OpenGLES 3.0+ backend" ON)
+option(USE_RENDER_VK "Vulkan backend" ON)
 
 # 建立项目
 if(ONLYCONSOLE)
@@ -78,32 +81,24 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(ANDROID)
-    add_definitions(
-        -D_KRKRSDL3_ANDROID=1
-        -D_KRKRSDL3_EGL=1
-    )
+    add_definitions(-D_KRKRSDL3_ANDROID=1)
 elseif(LINUX)
-    add_definitions(
-        -D_KRKRSDL3_LINUX=1
-        -D_KRKRSDL3_GL=1
-    )
+    add_definitions(-D_KRKRSDL3_LINUX=1)
 elseif(EMSCRIPTEN)
-    add_definitions(
-        -D_KRKRSDL3_EMSCRIPTEN=1
-        -D_KRKRSDL3_EGL=1
-    )
+    add_definitions(-D_KRKRSDL3_EMSCRIPTEN=1)
 elseif(WINDOWS)
-    add_definitions(
-        -D_KRKRSDL3_WINDOWS=1
-        -D_KRKRSDL3_GL=1
-    )
+    add_definitions(-D_KRKRSDL3_WINDOWS=1)
 elseif(OHOS)
-    add_definitions(
-        -D_KRKRSDL3_OHOS=1
-        -D_KRKRSDL3_EGL=1
-    )
+    add_definitions(-D_KRKRSDL3_OHOS=1)
 else()
     message(FATAL_ERROR "unsupported: ${CMAKE_SYSTEM_NAME}")
+endif()
+if(USE_RENDER_GL)
+    if(ANDROID OR EMSCRIPTEN OR OHOS)
+        add_definitions(-D_KRKRSDL3_GLES=1)
+    elseif(LINUX OR WINDOWS)
+        add_definitions(-D_KRKRSDL3_GL=1)
+    endif()
 endif()
 
 #

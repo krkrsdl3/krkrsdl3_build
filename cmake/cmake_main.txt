@@ -20,6 +20,15 @@ endif()
 if(USE_SDL3)
     add_definitions(-D_KRKRSDL3_USE_SDL3=1)
 endif()
+if(USE_RENDER_GL)
+    list(APPEND KRKRSDL_SRC ${KRKRSDL_CORE_OPENGL_SRC})
+    add_definitions(-D_KRKRSDL3_USE_OPENGL=1)
+endif()
+if(USE_RENDER_VK)
+    find_package(Vulkan QUIET)
+    list(APPEND KRKRSDL_SRC ${KRKRSDL_CORE_VULKAN_SRC})
+    add_definitions(-D_KRKRSDL3_USE_VULKAN=1)
+endif()
 
 #
 # 2.确定目标文件
@@ -196,6 +205,21 @@ if(NOT OHOS)
 
     find_package(plutovg CONFIG REQUIRED)
     target_link_libraries(${PROJECT_NAME} PRIVATE plutovg::plutovg)
+endif()
+
+if(Vulkan_FOUND)
+    if(LINUX)
+        # Linux: 使用系统 Vulkan loader（vcpkg 的 vulkan-loader 枚举实例扩展时
+        # 会丢失 VK_KHR_wayland_surface/xcb_surface/xlib_surface 等平台扩展，
+        # 导致 SDL_Vulkan_LoadLibrary 失败）。主流发行版均提供 libvulkan.so.1。
+        find_library(VULKAN_SYSTEM_LIBRARY NAMES vulkan REQUIRED)
+        target_link_libraries(${PROJECT_NAME} PRIVATE ${VULKAN_SYSTEM_LIBRARY})
+    else()
+        target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
+    endif()
+    message(STATUS "Vulkan render backend enabled (Vulkan ${Vulkan_VERSION})")
+else()
+    message(STATUS "Vulkan not found - Vulkan render backend disabled")
 endif()
 
 if(ANDROID)

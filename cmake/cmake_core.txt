@@ -46,6 +46,7 @@ set(KRKRSDL_CORE_SRC
     ${KRKRSDL_CORE_PATH}/render/TransIntf.cpp
 	${KRKRSDL_CORE_PATH}/render/TVPColor.cpp
     ${KRKRSDL_CORE_PATH}/render/TVPCompositor.cpp
+    ${KRKRSDL_CORE_PATH}/render/backend/SWRenderBackend.cpp
     ${KRKRSDL_CORE_PATH}/script/tjsNativeAsyncTrigger.cpp
     ${KRKRSDL_CORE_PATH}/script/tjsNativeBasicDrawDevice.cpp
     ${KRKRSDL_CORE_PATH}/script/tjsNativeBitmap.cpp
@@ -98,4 +99,12 @@ set(KRKRSDL_CORE_FFMPEG_SRC
     ${KRKRSDL_CORE_PATH}/media/movie/VideoPlayerAudio.cpp
     ${KRKRSDL_CORE_PATH}/media/movie/VideoPlayerVideo.cpp
     ${KRKRSDL_CORE_PATH}/media/movie/VideoReferenceClock.cpp
+)
+
+set(KRKRSDL_CORE_OPENGL_SRC
+    ${KRKRSDL_CORE_PATH}/render/backend/GLRenderBackend.cpp
+)
+
+set(KRKRSDL_CORE_VULKAN_SRC
+    ${KRKRSDL_CORE_PATH}/render/backend/VulkanRenderBackend.cpp
 )

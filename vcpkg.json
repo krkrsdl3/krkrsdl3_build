@@ -16,7 +16,10 @@
 
         "sdl2",
         "sdl2-ttf",
-        "sdl3",
+        {
+            "name": "sdl3",
+            "features": ["vulkan"]
+        },
         "sdl3-ttf",
         "glm",
         {
@@ -28,6 +31,14 @@
             "name": "glad",
             "features": ["egl", "loader"],
             "platform": "android | emscripten"
+        },
+        {
+            "name": "vulkan",
+            "platform": "windows | android"
+        },
+        {
+            "name": "vulkan-headers",
+            "platform": "linux"
         }
     ],
     "builtin-baseline": "8e8dfb4ba483886936ded5ca201b500b8d8b0096",
