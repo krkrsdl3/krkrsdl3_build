@@ -14,7 +14,8 @@
 引擎的图层合成内核（`RenderManager` 等）**保持完全软渲染**（krkr2/krkrz 原版思路），
 脚本渲染的最终结果是一张 CPU 位图。这张位图需要以不同方式上屏（GL / SDL 软渲染 /
 Vulkan / 未来的 Metal），同时动画插件（emoteplayer）有"离屏网格绘制 + CPU 回读"
-的需求。`iTVPRenderBackend` 把这两类需求统一成一个接口，约定：
+或"GPU 直通绘制"（DrawDeviceD3D 的 emote 路径）的需求。`iTVPRenderBackend` 把
+这些需求统一成一个接口，约定：
 
 1. **除 entry（平台入口）与 render（core/render）外，代码中不允许出现渲染后端区分**
    （如 `if (renderer == "opengl")`）。插件与上层只面向接口编程。
@@ -49,6 +50,10 @@ class iTVPRenderBackend {
     SetMask(maskTarget)                      // 蒙版=同尺寸目标，alpha>=128 有效；nullptr 关闭
     SetBlendMode(mode, uniformColor)         // 0/1/3/4/21；6=跳过；21 需 uniformColor(RGBA 0..1)
     DrawMesh(verts, nVerts, idx, nIdx, texture, opacity)
+    // ---- Layer 合成（供 DrawDeviceD3D：软件 RenderManager 混合语义的矩形合成）----
+    LayerSetBlend(method, opacity, uniformColor)  // LBM_COPY/ALPHA/CONSTALPHA/ADD/SUB/MUL/
+                                                  // MUL_HDA/FILL/COPYCOLOR/COPYOPAQUE/COPYMASK
+    LayerDrawRect(texture, x, y, w, h, u0,v0,u1,v1) // 目标像素坐标 + 归一化源矩形
     FetchInfo()                              // 后端信息日志（GL 厂商/版本/扩展等）
 };
 ```
@@ -62,18 +67,25 @@ class iTVPRenderBackend {
   `x/y` 为 NDC `[-1,1]`（GL 语义，Y 向上），`u/v` 为纹理坐标。
   CPU 侧网格计算（如 emoteplayer 的 `MeshVertex {x,y,u,v}`）与此布局天然一致，
   可直接传递。
+- **Layer 合成与 2D 网格是两套混合语义**：`DrawMesh` 的 `SetBlendMode` 遵循
+  emoteplayer 的混合约定（0 普通 / 1,4 乘色 / 3 加色 / 21 纯色 / 6 跳过）；
+  `LayerSetBlend/LayerDrawRect` 遵循软件 RenderManager（`gl/tvpgl.cpp` 的
+  bm* 方法，含 `_o` 变体的 `>>8` 截断语义）——两者不可混用。三后端 Layer 合成
+  与软件合成逐像素一致（允许 ±1 舍入；`LBM_COPY` 为精确直写）。
 
 ## 3. 三个后端实现（`cpp/core/render/backend/`）
 
-| 后端 | 文件 | 窗口合成 | 2D 网格 |
-|---|---|---|---|
-| OpenGL/GLES | `GLRenderBackend.{h,cpp}` | 全屏四边形 + 单贴图 shader（330 core / 300 es），uniform 缓存、惰性创建 VAO/VBO/EBO | 网格 shader（330 core / 100 es）+ FBO 目标 + 蒙版采样 discard + bm 混合映射 |
-| 软渲染 | `SWRenderBackend.{h,cpp}` | SDL_Texture 经 `PlatformView.h` 平台钩子 | CPU 光栅化（edge function + 仿射纹理步进 + blendPixels 混合公式），不依赖图形 API，为默认兜底 |
-| Vulkan | `VulkanRenderBackend.{h,cpp}` | 交换链 + 四边形管线（push constant 传像素坐标） | 3 个混合管线变体 + 离屏目标 + staging 回读 |
+| 后端 | 文件 | 窗口合成 | 2D 网格 | Layer 合成 |
+|---|---|---|---|---|
+| OpenGL/GLES | `GLRenderBackend.{h,cpp}` | 全屏四边形 + 单贴图 shader（330 core / 300 es），uniform 缓存、惰性创建 VAO/VBO/EBO | 网格 shader（330 core / 100 es）+ FBO 目标 + 蒙版采样 discard + bm 混合映射 | layer shader + 固定函数混合状态（COPY 直写 / ALPHA 全通道 SRC_ALPHA / ADD ONE+ONE / SUB 反向减 / MUL DST_COLOR…），shader 内 ×255/256 模拟软件 >>8 |
+| 软渲染 | `SWRenderBackend.{h,cpp}` | SDL_Texture 经 `PlatformView.h` 平台钩子 | CPU 光栅化（edge function + 仿射纹理步进 + blendPixels 混合公式），不依赖图形 API，为默认兜底 | 矩形光栅化 + `LayerBlendPixel`（tvpgl 整数公式直接翻译，位级一致） |
+| Vulkan | `VulkanRenderBackend.{h,cpp}` | 交换链 + 四边形管线（push constant 传像素坐标） | 3 个混合管线变体 + 离屏目标 + staging 回读 | `vk2d_layer.frag`（glslc 预编译嵌入）+ 9 条混合管线变体（含 REVERSE_SUBTRACT / DST_COLOR 因子组合） |
 
 - 后端经 `TVPRegisterRenderBackend` 静态注册（含平台探测 `probe`）；
   `-render` 参数与 `TVPSettings.renderer` 决定选择（`auto` → opengl → vulkan → software）。
 - 入口初始化失败时自动回退软渲染（重建窗口 + 软渲染后端），不直接退出。
+- **Layer 合成与 2D 网格共享目标/贴图/命令缓冲设施**，仅混合状态与绘制入口不同；
+  DrawDeviceD3D（见 `docs/drawdevice-d3d.md`）是 Layer 合成路径的主要使用者。
 
 ### 3.1 Vulkan 后端要点（最容易踩坑的部分）
 
@@ -143,3 +155,9 @@ wayland/xcb/xlib surface 扩展，导致 SDL_Vulkan_LoadLibrary 失败）。
 4. CMake：Apple 分支 `find_library(Metal/QuartzCore)`，`.mm` 需 `enable_language(OBJCXX)`，
    定义 `_KRKRSDL3_USE_METAL`。
 5. `TVPSettings` 默认选择顺序中加入 `metal`（macOS 上 `auto` 优先 metal）。
+6. 实现 `LayerSetBlend` / `LayerDrawRect`（Layer 合成角色）：
+   - 混合状态按 `LayerBlendMethod` 映射到后端能力（直写 / SRC_ALPHA 对 /
+     ONE+ONE 加减 / DST_COLOR 乘 / 通道选择因子组合）；
+   - 坐标：目标像素坐标 → NDC（内容顶=NDC −1），UV 归一化源矩形；
+   - 需要与软件 RenderManager（`gl/tvpgl.cpp` 的 bm* 方法）逐像素一致
+     （允许 ±1 舍入）。

@@ -51,6 +51,16 @@
 即：引擎的图层合成内核永远是软件渲染（`tTVPSoftwareRenderManager`），
 `-render` 参数只改变"上屏后端"（第 ⑤ 层）。这是理解整个体系的关键。
 
+> **为什么内核不 GPU 化（CPU↔GPU 带宽）**：`iTVPRenderManager` 的接口契约是
+> CPU 位图操作（`GetScanLineForWrite`/`GetPoint`/`GetTextureData`...）。若改为 GPU
+> 实现，每个 `OperateRect` 都要把目标纹理 GPU→CPU 回读或 CPU→GPU 上传
+> （一次全屏往返 = w·h·4 字节 PCIe 传输），一帧几十上百次 blit 就形成
+> **CPU→GPU→CPU→GPU→CPU 的反复横跳**；而大量图形处理（FreeType 文字、PS 混合、
+> 模糊、gamma、色彩映射、转场）根本没有 GPU 等价实现，一旦纹理在 GPU 侧，
+> 这些操作会强制整帧回读。因此正确做法是 **Layer 分批在 CPU 上精细合成后，
+> 每帧只做一次 CPU→GPU 上传**（CPU→CPU→CPU→CPU→GPU，见
+> `docs/drawdevice-d3d.md` §4.3）——DrawDeviceD3D 正是这条路径。
+
 ---
 
 ## 2. 脚本层（面向 TJS2）
@@ -187,8 +197,8 @@ class iTVPRenderManager      // 渲染管理器抽象
   各实现静态注册；`tTVPSoftwareRenderManager` 注册名为 `"software"`。
 - `TVPGetRenderManager()`：默认取 `"software"`（当前唯一实现），惰性创建 + `Initialize()`。
 - `TVPGetSoftwareRenderManager()`：独立单例（province image 专用，与主管理器分开）。
-- `TVPIsSoftwareRenderManager()`：缓存结果，脚本层 `IsGPU()` 基于它判断
-  是否走 GPU 合成路径（`InternalComplete2_GPU`）。
+- `TVPIsSoftwareRenderManager()`：当前渲染管理器是否为软件实现
+  （脚本层已无 GPU 合成路径，此函数主要用于诊断/扩展）。
 
 ### 4.3 软件贴图实现（`RenderManager.cpp`）
 
@@ -273,7 +283,8 @@ tTVPBasicDrawDevice::Update
             └─ EndBitmapCompletion(Manager)
 ```
 
-- `InternalComplete2_GPU`：GPU 路径（`IsGPU()` 为真时），语义与软件路径一致。
+- `InternalComplete2`：唯一完成路径（早期曾存在 `InternalComplete2_GPU`/`Draw_GPU`
+  GPU 分支，因带宽与兼容性问题已移除——Layer 树恒为软渲染，见 §1 注解）。
 - `Complete(rect)`：图层缓存（CacheBitmap）重建，`CacheRecalcRegion` 为空时直接复用缓存。
 
 ### 5.4 绘制设备上屏
@@ -315,6 +326,8 @@ class iTVPRenderBackend {          // 一个接口同时承担两个角色
     CreateTarget / SetTarget / ClearTarget / LockTarget / UnlockTarget
     CreateTexture / UpdateTexture / DestroyTexture      // 一般贴图
     SetMask / SetBlendMode(0/1/3/4/6/21) / DrawMesh      // 蒙版 + 混合 + 网格
+    // ---- Layer 合成（DrawDeviceD3D 用；软件 RenderManager 混合语义）----
+    LayerSetBlend(method, opacity, uniformColor) / LayerDrawRect(texture, x, y, w, h, uv0..1)
     FetchInfo()
 };
 ```
@@ -326,13 +339,19 @@ class iTVPRenderBackend {          // 一个接口同时承担两个角色
 插件（emoteplayer）经 `TVPGetRenderBackend()` 直接获得当前后端即 2D 渲染器，
 无独立的 2D 渲染器注册表。
 
+**Layer 合成（第三个角色）**：`LayerSetBlend/LayerDrawRect` 供 DrawDeviceD3D 合成
+用，混合公式遵循软件 RenderManager（tvpgl 的 bm* 方法，含 `>>8` 截断语义），
+与 2D 网格（emoteplayer 约定）明确区分；三后端实现与软件合成逐像素一致
+（允许 ±1 舍入，`LBM_COPY` 精确直写）。详见 `docs/rendering-architecture.md` §2、
+`docs/drawdevice-d3d.md` §4.2。
+
 ### 6.3 三个后端实现
 
-| 后端 | 文件 | 窗口合成 | 2D 网格 |
-|---|---|---|---|
-| OpenGL/GLES | `backend/GLRenderBackend.{h,cpp}` | 窗口 shader（330 core / 300 es）+ 四边形 | 网格 shader（330 core / 100 es）+ FBO 目标/蒙版/混合 |
-| 软渲染 | `backend/SWRenderBackend.{h,cpp}` | SDL_Texture 经 `PlatformView.h` 平台钩子 | CPU 光栅化（edge function + 仿射纹理步进 + blendPixels） |
-| Vulkan | `backend/VulkanRenderBackend.{h,cpp}` | 交换链 + 四边形管线 | 3 个混合管线变体 + 离屏目标 + staging 回读 |
+| 后端 | 文件 | 窗口合成 | 2D 网格 | Layer 合成 |
+|---|---|---|---|---|
+| OpenGL/GLES | `backend/GLRenderBackend.{h,cpp}` | 窗口 shader（330 core / 300 es）+ 四边形 | 网格 shader（330 core / 100 es）+ FBO 目标/蒙版/混合 | layer shader + 固定函数混合状态（软件 bm* 语义） |
+| 软渲染 | `backend/SWRenderBackend.{h,cpp}` | SDL_Texture 经 `PlatformView.h` 平台钩子 | CPU 光栅化（edge function + 仿射纹理步进 + blendPixels） | 矩形光栅化 + tvpgl 整数公式（位级一致） |
+| Vulkan | `backend/VulkanRenderBackend.{h,cpp}` | 交换链 + 四边形管线 | 3 个混合管线变体 + 离屏目标 + staging 回读 | `vk2d_layer.frag` + 9 条混合管线变体 |
 
 选择逻辑：`-render` 参数（auto → opengl → vulkan → software），
 `TVPGetRenderBackend()` 返回当前合成后端（兼作 2D 渲染器）。
@@ -412,7 +431,7 @@ SDL_AppIterate
 | `cpp/core/script/tjsNativeLayer.h/.cpp` | Layer 脚本对象（约 1.1 万行：树/绘制/输入/缓存/转场） |
 | `cpp/core/script/tjsNativeBitmap.h/.cpp` | Bitmap 脚本对象 |
 | `cpp/core/script/tjsNativeBitmapLayerTreeOwner.h` | 位图式 LayerTreeOwner |
-| `cpp/core/script/tjsNativeLayer.cpp` | `IsGPU()`、`CompleteForWindow`、`InternalComplete2(_GPU)`、`Draw` |
+| `cpp/core/script/tjsNativeLayer.cpp` | `CompleteForWindow`、`InternalComplete2`、`Draw`（无 GPU 路径，Layer 树恒为软渲染） |
 
 ### 图层 / 位图 / 合成内核
 | 文件 | 内容 |
@@ -438,7 +457,7 @@ SDL_AppIterate
 | 文件 | 内容 |
 |---|---|
 | `cpp/core/render/TVPCompositor.h` | 单一合并接口 iTVPRenderBackend + 注册表 + 全局后端 |
-| `cpp/core/render/backend/GLRenderBackend.{h,cpp}` | GL 合并后端（窗口合成 + 2D 网格） |
+| `cpp/core/render/backend/GLRenderBackend.{h,cpp}` | GL 合并后端（窗口合成 + 2D 网格 + Layer 合成） |
 | `cpp/core/render/backend/SWRenderBackend.{h,cpp}` | 软件合并后端（SDL_Texture + CPU 光栅化） |
 | `cpp/core/render/backend/VulkanRenderBackend.{h,cpp}` | Vulkan 合并后端 |
 | `cpp/core/render/backend/shader/*` | GLSL/SPIR-V 源码与生成头 |
@@ -455,8 +474,12 @@ SDL_AppIterate
 ## 10. 扩展点速查
 
 - **换 RenderManager**（GPU 化内核）：实现 `iTVPRenderManager` +
-  `REGISTER_RENDERMANAGER`；脚本层 `IsGPU()` 会自动切到 `InternalComplete2_GPU` 路径。
-- **换上屏后端**：实现 `iTVPRenderBackend`（窗口合成 + 2D 网格，见 6.2）+
+  `REGISTER_RENDERMANAGER`。⚠ 注意：脚本层已**移除** `IsGPU`/`InternalComplete2_GPU`
+  路径（`tjsNativeLayer`），Layer 树恒走软件合成——GPU 化内核需自行承担
+  `GetScanLineForWrite` 等 CPU 操作的回读/上传往返（带宽见 §1 注解），
+  DrawDeviceD3D 曾实现过 `tTVPRenderManager_GPU`（"d3d"），因带宽与兼容性
+  问题已整体移除，GPU 加速改由后端 Layer 合成路径承担。
+- **换上屏后端**：实现 `iTVPRenderBackend`（窗口合成 + 2D 网格 + Layer 合成，见 6.2）+
   `TVPRegisterRenderBackend`；`-render` 选择，初始化失败自动回退软渲染。
 - **插件直接渲染**（emoteplayer）：经 `TVPGetRenderBackend()` 获得当前后端，
   离屏目标绘制 + LockTarget 回读，插件内零后端区分代码。

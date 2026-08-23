@@ -8,8 +8,12 @@
 ## 1. 定位
 
 emoteplayer 是一个 **Live2D 式（EMOTE/PSB 格式）动画播放器插件**：
-资源解析 + 动画状态机 + 自绘渲染全部在插件内部实现，输出端把最终像素写入
-KAG Layer 的主图像缓冲，由引擎的合成器继续处理。
+资源解析 + 动画状态机 + 自绘渲染全部在插件内部实现。输出端有两条路：
+
+1. **软件路径**：把最终像素写入 KAG Layer 的主图像缓冲（`draw()` → 回读 →
+   `Update()`），由引擎的合成器继续处理；
+2. **GPU 直通路径**：`drawToTarget()` 把动画网格直接绘入给定后端离屏目标
+   （不回读），供 DrawDeviceD3D 的 D3DEmotePlayer 采样后混入合成画面。
 
 - 文件结构：
   - `emotefile.{h,cpp}`：PSB 资源解析（压缩/加密/调色板/对象树/图标位图）
@@ -52,7 +56,9 @@ KAG Layer 的主图像缓冲，由引擎的合成器继续处理。
   （GL 生成 mipmap、软渲染/Vulkan 为 CPU/GPU 缓冲），句柄存于 `emoteicon::selftexture`。
 
 > 与引擎其他部分的分工：插件不触碰 DrawDevice / RenderManager / TVPCompositor，
-> 唯一输出口是"改 Layer 主图像缓冲 + Update()"。
+> 输出口是"改 Layer 主图像缓冲 + Update()"（软件路径）或"离屏目标直通绘制"
+> （`drawToTarget`，D3D 路径；该入口负责初始化 `_limitArea` 绘制区域——
+> 直通路径不经 `ResetDrawArea`，区域未初始化会导致动画不推进、投影退化）。
 
 ## 4. 工程遗留与注意点（贡献须知）
 
@@ -79,5 +85,5 @@ KAG Layer 的主图像缓冲，由引擎的合成器继续处理。
 | 动画插值/参数化/时间轴 | `emoterunner.cpp` 的 progress 系列 |
 | 网格细分密度/贝塞尔求值 | `buildSubdivMesh` / `evaluateSurfaceChain`（emoterunner.cpp） |
 | 混合/蒙版语义 | 后端 `SetBlendMode` / `SetMask`（core/render/backend/）与插件 draw 调用处 |
-| 输出方式（去回读直通 GPU） | `EmotePlayer::draw`（emoteplayerclass.cpp），需后端支持"目标直接作纹理" |
+| 输出方式（去回读直通 GPU） | `EmotePlayer::drawToTarget`（emoteplayerclass.cpp，已实现，D3DEmotePlayer 使用） |
 | 图标格式/解码 | `emotefile.cpp` 的 readIconTobuffer / ensureLoad |

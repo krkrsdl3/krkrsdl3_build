@@ -38,6 +38,8 @@ set(KRKRSDL_PLUGINS_SRC
     ${KRKRSDL_PLUGINS_PATH}/wuvorbis.cpp
     ${KRKRSDL_PLUGINS_PATH}/xp3filter.cpp
     ${KRKRSDL_PLUGINS_PATH}/DrawDeviceD3D/DrawDeviceD3D.cpp
+    ${KRKRSDL_PLUGINS_PATH}/DrawDeviceD3D/DrawDeviceD3D_reg.cpp
+    ${KRKRSDL_PLUGINS_PATH}/DrawDeviceD3D/D3DEmotePlayer.cpp
     ${KRKRSDL_PLUGINS_PATH}/emoteplayer/emotefile.cpp
     ${KRKRSDL_PLUGINS_PATH}/emoteplayer/emoteplayer.cpp
     ${KRKRSDL_PLUGINS_PATH}/emoteplayer/emoteplayerclass.cpp
