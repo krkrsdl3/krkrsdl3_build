@@ -75,16 +75,19 @@ class SystemBaseLayer extends Layer {
 
 ```
 窗口事件循环（SDL_AppIterate）
-  ├─ tTJSNI_BaseWindow::UpdateContent()
+  ├─ TVPWindow::UpdateContent()
   │    ├─ DrawDevice->Update()          // iTVPDrawDevice::Update → RenderFrame()
   │    └─ (非 VSync) DrawDevice->Show() // → PresentToWindow()
+  │         └─ TVPWindow::PresentTexture(...)   // 统一呈现入口
   └─ TVPRenderOnce()
        ├─ Backend->BeginFrame(w, h)
-       ├─ DrawWindowTexture(spr->texture, ...)   // spr->texture = composite 包装
+       ├─ DrawWindowTexture(spr->texture, ...)   // spr->texture = composite 包装（别名）
        └─ Backend->EndFrame()
 ```
 
 脚本侧还有显式 `dd.update(diffTime)`（转场推进 + RenderFrame + PresentToWindow）。
+呈现统一经 `TVPWindow::PresentTexture`（窗口与绘制设备共用一条路径，见
+`docs/window-system.md` §5 与 `docs/gpu-readback-design.md` §2.2 A1）。
 
 ### 2.5 D3D 模式的 LayerManager 划分与 RenderFrame 合成顺序
 
@@ -200,7 +203,7 @@ DrawQuadTo(..., LBM_ALPHA)              // 透明区露出下层世界层
 
 | 文件 | 职责 |
 |---|---|
-| `DrawDeviceD3D.h/.cpp` | 设备类：RenderFrame/PresentToWindow/composite/D3DLayers/转场/捕获 |
+| `DrawDeviceD3D.h/.cpp` | 设备类：RenderFrame/PresentToWindow（经 Window::PresentTexture 呈现）/composite/D3DLayers/转场/捕获 |
 | `DrawDeviceD3D_reg.cpp` | ncb 注册（DrawDeviceD3D/D3DLayer/D3DImage/D3DPicture/D3DEmotePlayer + LayerD3DAttach） |
 | `D3DEmotePlayer.h/.cpp` | emote 动画 GPU 直通（包装 emoteplayer::EmotePlayer） |
 | `core/render/TVPCompositor.h/.cpp` | `iTVPRenderBackend` 抽象（窗口合成 + 2D 网格 + Layer 合成）与后端注册 |
@@ -282,8 +285,10 @@ VK 的 NDC 方向与 SW 的回读行序恰好一致（三后端 `LockTarget` 结
   `RequestInvalidation(全屏)` → `UpdateToDrawDevice()`（CPU 软合成）→
   `GetTextureData` 读像素 → `UpdateTexture` 上传（CPU→GPU，每帧 1 次）→
   `DrawQuadTo(..., LBM_ALPHA)` 混入 composite。
-- `PresentToWindow`：GPU 后端 `spr->texture = GetTargetTexture(CompositeTarget)`
-  （零拷贝上屏）；SW 后端 `LockTarget → UpdateWindowTexture` 回读上传。
+- `PresentToWindow`：统一经 `TVPWindow::PresentTexture` 呈现——GPU 后端直传
+  `GetTargetTexture(CompositeTarget)`（sprite 纹理别名，零拷贝上屏）；
+  SW 后端 `LockTarget` 回读 → `PresentScratchTexture` 中转 → 窗口上传（SW 保底路径）。
+  窗口可见性/尺寸由 TVPWindow 统一管理，设备不再直接操作 sprite。
 - `DrawD3DLayerPictures`（D3DLayer 的 GPU 直通）：按 frontIndex 排序后逐层
   `SetTarget + LayerSetBlend(LBM) + DrawMesh`（4 角经仿射矩阵 → NDC；目前非仿射
   也走 DrawMesh 近似混合，可优化为 `LayerDrawRect` 精确 Layer 合成路径）；
@@ -357,7 +362,8 @@ VK 的 NDC 方向与 SW 的回读行序恰好一致（三后端 `LockTarget` 结
     移除 IsGPU、Layer 树改回软渲染后消失。
 - 帧 dump 调试钩子：`KRKR_DUMP_FRAME=<目录> KRKR_DUMP_INTERVAL=<N>` 环境变量
   启用（默认关闭，零开销），`TVPUpdateTexture`（非 D3D）与
-  `PresentToWindow`（D3D）各写 `win_/d3d_<帧号>.rgba`（magic + w/h + RGBA）。
+  `PresentToWindow`（D3D，经 `Window->PresentTexture`）各写 `win_/d3d_<帧号>.rgba`
+  （magic + w/h + RGBA）。
 
 ---
 
@@ -391,7 +397,7 @@ VK 的 NDC 方向与 SW 的回读行序恰好一致（三后端 `LockTarget` 结
 | 脚本用法 | 引擎实现 |
 |---|---|
 | `new DrawDeviceD3D(w, h)` | `DrawDeviceD3D(tjs_int, tjs_int)`（不切换渲染管理器） |
-| `win.drawDevice = dd` | `tTJSNI_BaseWindow::SetDrawDeviceObject` → UpdateContent 驱动 |
+| `win.drawDevice = dd` | `TVPWindow::SetDrawDeviceObject` → UpdateContent 驱动 |
 | `dd.update(t)` / `dd.capture(layer, i)` / `dd.startTransition` | 对应方法 |
 | `dd.primaryLayers.count` / `dd.layerManagerIndex` / `dd.clearColor` / `dd.maskMode` / `dd.stretchType` / `dd.transState` | NCB 属性 |
 | `new D3DLayer(dd)` + `drawPlane/frontIndex/backIndex/setMatrix` | D3DLayer 类（GPU 直通，Layer 合成路径） |

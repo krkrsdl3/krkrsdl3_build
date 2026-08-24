@@ -30,10 +30,11 @@
 │    iTVPTexture2D（软件贴图）+ RenderMethod 注册表（gl/tvpgl.cpp）      │
 │    ↓ 合成到 DrawBuffer（tTVPDestTexture）                             │
 ├─────────────────────────────────────────────────────────────────────┤
-│ ④ 图层管理器 / 绘制设备   cpp/core/render/ (LayerManager.*           │
-│    DrawDevice.* LayerTreeOwner.* MainWindowLayer.cpp)                │
-│    tTVPLayerManager → tTVPBasicDrawDevice → iWindowLayer             │
-│    ↓ 上传窗口贴图（TVPUpdateTexture）                                 │
+│ ④ 图层管理器 / 窗口 / 绘制设备                                        │
+│    cpp/core/render/ (LayerManager.* DrawDevice.* LayerTreeOwner.*)   │
+│    cpp/core/main/ (TVPWindow.* WindowManager.*)                      │
+│    tTVPLayerManager → tTVPBasicDrawDevice → TVPWindow::PresentTexture│
+│    （统一呈现入口：GPU 别名零拷贝 / SW 上传窗口贴图）                   │
 ├─────────────────────────────────────────────────────────────────────┤
 │ ⑤ 窗口贴图合成 + 后端    cpp/core/render/TVPCompositor.cpp           │
 │    cpp/core/render/backend/*（GL/SW/Vulkan）                         │
@@ -110,13 +111,16 @@
 - 图层只把**变化区域**记入更新区，合成时按"暴露区 ∩ 更新区"逐条重绘——
   这是 krkrz 经典的矩形合并优化（`TVP_UPDATE_UNITE_LIMIT` 等合并阈值）。
 
-### 2.5 转场（`TransIntf.h/cpp`、`transhandler.h`）
+### 2.5 转场（`TVPTrans.h/cpp`、`transhandler.h`）
 
 - `iTVPTransHandlerProvider`：转场处理器提供者（CrossFade 等，可注册多个）。
 - `tTVPSimpleOptionProvider` / `tTVPSimpleImageProvider`：把脚本对象包装成
   选项/图像提供者。
-- 转场合成通过 `TVPGetRenderManager()->GetRenderMethod("UnivTransBlend"...)` +
-  `OperateRect` 完成（见 TransIntf.cpp）。
+- 转场混合统一经 `tTVPTransBlender` 按当前渲染管理器分派：
+  `TVPGetRenderManager()->GetRenderMethod(...)` + `OperateRect`（见 TVPTrans.cpp）；
+  默认软件 RenderManager 与 krkrz 原版逐像素一致，插件注入 GPU RenderManager
+  后同名方法自动落 GPU 侧（`ConstAlphaBlend_SD[_d/_a]`、`UnivTransBlend[_d/_a]`、
+  `Copy`）。渲染方法按渲染管理器实例缓存，切换管理器自动重解析。
 
 ---
 
@@ -287,14 +291,23 @@ tTVPBasicDrawDevice::Update
   GPU 分支，因带宽与兼容性问题已移除——Layer 树恒为软渲染，见 §1 注解）。
 - `Complete(rect)`：图层缓存（CacheBitmap）重建，`CacheRecalcRegion` 为空时直接复用缓存。
 
-### 5.4 绘制设备上屏
+### 5.4 绘制设备上屏（统一呈现入口）
+
+窗口与绘制设备收敛为一条呈现路径（入口唯一，转化在各 DrawDevice）：
 
 ```
-tTVPBasicDrawDevice::Show()
-  └─ Manager->GetDrawBuffer() → buf->GetTexture()
-       └─ form->UpdateDrawBuffer(tex)     // form = iWindowLayer（MainWindowLayer.cpp）
-            └─ TVPUpdateTexture(pSprite, ...)   // 上传窗口贴图
+tTVPBasicDrawDevice::Show()                        DrawDeviceD3D::PresentToWindow()
+  └─ DrawBuffer(iTVPTexture2D)                       ├─ GPU 后端：GetTargetTexture(CompositeTarget)
+       ├─ GPU 驻留：GetTextureHandle() 直传           │    （sprite 别名，零拷贝）
+       └─ 软渲染：LockCPURead → scratch 贴图          └─ SW 后端：LockTarget → PresentScratchTexture 中转
+            ↓                                              ↓
+            └──────────→ TVPWindow::PresentTexture(texture, w, h)
+                          ├─ GPU 后端：sprite 纹理别名（borrowedTexture，零拷贝）
+                          └─ SW 后端：LockTexture 读取 → TVPUpdateTexture 上传窗口贴图
+                                （尺寸不一致时 SetSize 同步 paint box/sprite/首窗口平台尺寸）
 ```
+
+窗口系统分层详见 `docs/window-system.md`；防回读设计详见 `docs/gpu-readback-design.md`。
 
 ---
 
@@ -304,7 +317,9 @@ tTVPBasicDrawDevice::Show()
 
 - `TVPSprite`（`PlatformView.h`）：窗口贴图描述——
   `texture`（后端不透明句柄）/ `type`（0 窗口 / 1 modal / 2 overlay）/
-  `xPos,yPos,scale,width,height,isVisible`。
+  `xPos,yPos,scale,width,height,isVisible` / `borrowedTexture`
+  （纹理是否借用于外部（GPU 别名）；借用的句柄不由 sprite 销毁，见
+  `docs/gpu-readback-design.md` §2.3）。
 - `TVPCompositor` 是纯调度器：
   - `TVPJoinTexture` / `TVPDepartTexture`：维护参与合成的 sprite 列表。
   - `TVPRenderOnce(winW, winH)`：`BeginFrame` → 绘制 currentSprite 与 overlay
@@ -372,7 +387,7 @@ class iTVPRenderBackend {          // 一个接口同时承担两个角色
 SDL_AppIterate
   ├─ Application->Run()                 // TJS 事件循环：脚本执行、定时器、图层更新
   │     └─ 图层绘制 → 软件合成 → DrawBuffer
-  │     └─ DrawDevice::Show → UpdateDrawBuffer → TVPUpdateTexture（上传窗口贴图）
+  │     └─ DrawDevice::Show → Window::PresentTexture（统一呈现入口，见 §5.4）
   └─ TVPRenderOnce(RW, RH)              // 合成器：清屏 → 画 currentSprite/overlay → 呈现
         ├─ backend->BeginFrame()
         ├─ backend->DrawWindowTexture(...)   × currentSprite + overlay
@@ -406,8 +421,10 @@ SDL_AppIterate
                        └─ DrawCompleted → 合成进 tTVPDestTexture (DrawBuffer)
         ↓
 ⑤ tTVPBasicDrawDevice::Show()
-        └─ form->UpdateDrawBuffer(DrawBuffer->GetTexture())
-             └─ TVPUpdateTexture(pSprite, ...) → backend->UpdateWindowTexture()
+        └─ DrawBuffer(iTVPTexture2D) → LockCPURead → scratch 一般贴图
+             └─ TVPWindow::PresentTexture(scratch, w, h)
+                  └─ SW 后端：LockTexture → TVPUpdateTexture → backend->UpdateWindowTexture()
+                  └─ GPU 后端：sprite 纹理别名（零拷贝）
         ↓
 ⑥ SDL_AppIterate → TVPRenderOnce(RW, RH)
         ├─ backend->BeginFrame(RW, RH)          // 清屏/取交换链图像
@@ -449,8 +466,10 @@ SDL_AppIterate
 | `cpp/core/render/LayerManager.h/.cpp` | tTVPLayerManager / tTVPDestTexture |
 | `cpp/core/render/DrawDevice.h/.cpp` | iTVPDrawDevice / tTVPBasicDrawDevice |
 | `cpp/core/render/LayerTreeOwner.h/.cpp` | iTVPLayerTreeOwner / tTVPLayerTreeOwner |
-| `cpp/core/render/TransIntf.h/.cpp`、`transhandler.h` | 转场 |
-| `cpp/core/render/MainWindowLayer.cpp` | TVPWindowLayer（iWindowLayer 实现，持有 TVPSprite） |
+| `cpp/core/render/TVPTrans.h/.cpp`、`transhandler.h` | 转场（tTVPTransBlender 按渲染管理器分派） |
+| `cpp/core/main/TVPWindow.h/.cpp` | TVPWindow 窗口核心（引擎侧）+ 输入事件类 |
+| `cpp/core/main/WindowManager.h/.cpp` | 窗口列表 + SDL 事件分发（KRKR_Trig_*） |
+| `cpp/core/script/tjsNativeWindow.h/.cpp` | tTJSNI_Window 薄绑定 + tTJSNC_Window（TJS 类） |
 | `cpp/core/render/TVPCompositor.h/.cpp` | TVPRenderOnce / 窗口贴图调度 |
 
 ### 渲染后端

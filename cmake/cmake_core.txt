@@ -13,7 +13,8 @@ set(KRKRSDL_CORE_SRC
     ${KRKRSDL_CORE_PATH}/main/TVPApplication.cpp
     ${KRKRSDL_CORE_PATH}/main/TVPEvent.cpp
     ${KRKRSDL_CORE_PATH}/main/TVPSystem.cpp
-    ${KRKRSDL_CORE_PATH}/main/WindowIntf.cpp
+    ${KRKRSDL_CORE_PATH}/main/TVPWindow.cpp
+    ${KRKRSDL_CORE_PATH}/main/WindowManager.cpp
     ${KRKRSDL_CORE_PATH}/media/font/CharacterData.cpp
     ${KRKRSDL_CORE_PATH}/media/font/FreeTypeFontRasterizer.cpp
     ${KRKRSDL_CORE_PATH}/media/font/FreeTypeImp.cpp
@@ -41,9 +42,8 @@ set(KRKRSDL_CORE_SRC
     ${KRKRSDL_CORE_PATH}/render/LayerBitmap.cpp
     ${KRKRSDL_CORE_PATH}/render/LayerManager.cpp
     ${KRKRSDL_CORE_PATH}/render/LayerTreeOwner.cpp
-    ${KRKRSDL_CORE_PATH}/render/MainWindowLayer.cpp
     ${KRKRSDL_CORE_PATH}/render/RenderManager.cpp
-    ${KRKRSDL_CORE_PATH}/render/TransIntf.cpp
+    ${KRKRSDL_CORE_PATH}/render/TVPTrans.cpp
 	${KRKRSDL_CORE_PATH}/render/TVPColor.cpp
     ${KRKRSDL_CORE_PATH}/render/TVPCompositor.cpp
     ${KRKRSDL_CORE_PATH}/render/backend/SWRenderBackend.cpp
