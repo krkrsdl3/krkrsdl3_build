@@ -1,0 +1,752 @@
+#define SDL_MAIN_USE_CALLBACKS
+#ifdef _KRKRSDL3_IOS
+// iOS: 进程入口由壳工程 APP/AppStartup.m 自定义(合成 Games argv → SDL_RunApp),
+// 本静态库只定义 SDL_App* 回调(不生成 main / SDL_main, 避免与壳冲突)。
+#define SDL_MAIN_NOIMPL
+#endif
+#include <SDL3/SDL_main.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_render.h>
+#include <SDL3/SDL_log.h>
+#include <SDL3/SDL_timer.h>
+#ifdef _KRKRSDL3_GL
+#include "glad/glad.h"
+#elif defined(_KRKRSDL3_EGL)
+#include "glad/glad_egl.h"
+#endif
+
+#include <map>
+#include <vector>
+#ifdef _KRKRSDL3_EMSCRIPTEN
+#include <emscripten.h>
+#endif
+
+#include "TVPApplication.h"
+#include "WindowIntf.h"
+#include "Platform.h"
+#include "MainWindowLayer.h"
+#include "eventCallbackFun.h"
+#include "TVPSettings.h"
+#include "TVPCompositor.h"
+#include "TVPDebug.h"
+
+#ifndef _DEBUG
+#ifdef _KRKRSDL3_WINDOWS
+#include <windows.h>
+#endif
+#endif
+
+#ifdef _KRKRSDL3_IOS
+// 屏幕方向控制(实现在 environ/ios/ios_core.mm)
+extern "C" void TVPSetGameRunningOrientation(bool running);
+#endif
+
+#define winWidth 1280
+#define winHeight 720
+static SDL_Window* tvp_window;
+static SDL_Renderer* tvp_renderer = NULL;
+static SDL_GLContext tvp_glContext = NULL;
+
+SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
+{
+    // exeName gameNamey args
+    if (argc < 2)
+    {
+        SDL_Log("At least two parameters are required.");
+        return SDL_APP_FAILURE;
+    }
+
+    // 参数解析
+    if (!TVPParseArguments(argc, argv))
+        return SDL_APP_FAILURE;
+
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
+    { // for format converter
+        SDL_Log("Fail to initialize SDL.");
+        return SDL_APP_FAILURE;
+    }
+
+    // 窗口
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "TVP Engine");
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, SDL_WINDOWPOS_CENTERED);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, winWidth);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, winHeight);
+    if (TVPSettings.renderer == "opengl")
+        SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+    else
+        SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, SDL_WINDOW_RESIZABLE);
+    tvp_window = SDL_CreateWindowWithProperties(props);
+
+#ifdef _KRKRSDL3_IOS
+    // iOS: 强制软渲染。TVPSettings 可能因 SDL backends 含 "opengles2" 而自动选 opengl,
+    // 但 iOS 用 SDL 软渲染器(与核心SW路径匹配, KrKrCat已验证此方式可正常显示画面)
+    TVPSettings.renderer = "software";
+    tvp_renderer = SDL_CreateRenderer(tvp_window, NULL);
+    SDL_SetRenderVSync(tvp_renderer, 1);
+    SDL_Log("SWRender Backend: %s", SDL_GetRendererName(tvp_renderer));
+#else
+    if (TVPSettings.renderer == "opengl")
+    {
+#ifdef _KRKRSDL3_GL
+        // 使用opengl3.3
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#else
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#endif
+        tvp_glContext = SDL_GL_CreateContext(tvp_window);
+        if (tvp_glContext == NULL)
+            return SDL_APP_FAILURE;
+        // 使用SDL3上下文
+#if _KRKRSDL3_GL
+        if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
+#elif !defined(_KRKRSDL3_EMSCRIPTEN)
+        if (!gladLoadEGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
+#endif
+#if !defined(_KRKRSDL3_EMSCRIPTEN) || defined(_KRKRSDL3_GL)
+        {
+            SDL_Log("Failed to initialize GLAD");
+            return SDL_APP_FAILURE;
+        }
+#endif
+        SDL_GL_MakeCurrent(tvp_window, tvp_glContext);
+        SDL_GL_SetSwapInterval(1);
+        // GL相关信息初始化
+        krkrsdl3::fetchGLInfo();
+    }
+    else
+    {
+        // SDL模拟软渲染器，虽然可能选择GPU，但对于App来说是软渲染
+        tvp_renderer = SDL_CreateRenderer(tvp_window, NULL);
+        SDL_SetRenderVSync(tvp_renderer, 1);
+        SDL_Log("SWRender Backend: %s", SDL_GetRendererName(tvp_renderer));
+    }
+#endif // _KRKRSDL3_IOS
+
+    // 初始化时不显示
+    SDL_HideWindow(tvp_window);
+    SDL_DestroyProperties(props);
+
+    // 启动游戏
+    Application = new tTVPApplication;
+    if (!::Application->StartApplication())
+    {
+        SDL_Log("Game Start Failed.");
+        return SDL_APP_FAILURE;
+    }
+#ifdef _KRKRSDL3_IOS
+    // iOS: 游戏启动后锁横屏(实现在 environ/ios/ios_core.mm)
+    TVPSetGameRunningOrientation(true);
+#endif
+
+    // 隐藏命令行
+#ifndef _DEBUG
+#ifdef _KRKRSDL3_WINDOWS
+    ShowWindow(GetConsoleWindow(), SW_HIDE);
+#endif
+#endif
+    SDL_ShowWindow(tvp_window);
+
+    // 初始帧数
+    SDL_AppIterate(NULL);
+
+    return SDL_APP_CONTINUE;
+}
+
+#if defined(_KRKRSDL3_ANDROID) || defined(_KRKRSDL3_EMSCRIPTEN) || defined(_KRKRSDL3_IOS)
+// 触屏事件机制（Android / WASM / iOS 移动端）
+enum TouchState
+{
+    STATE_IDLE,
+    STATE_SINGLE_FINGER, // 单指状态（处理左键和移动）
+    STATE_MULTI_FINGER,  // 多指状态（处理右键）
+    STATE_MENU
+};
+struct Finger
+{
+    SDL_FingerID id;
+    float x, y;           // 归一化坐标
+    float startX, startY; // 按下时的位置
+    Uint64 downTime;
+    bool active;
+    bool moved;
+
+    Finger() : id(0), x(0), y(0), startX(0), startY(0), downTime(0), active(false), moved(false) {}
+};
+static TouchState _state;
+static std::map<SDL_FingerID, Finger> fingers;
+static float rightClickX, rightClickY;
+static Uint64 rightClickStartTime;
+static const Uint32 RIGHT_CLICK_CONFIRM_DELAY = 150;
+void sendMouseEvent(int button, int eventType, float pX, float pY);
+void sendMouseMotion(float pX, float pY);
+void handleFingerDown(const SDL_TouchFingerEvent& e)
+{
+    Finger f;
+    f.id = e.fingerID;
+    f.x = f.startX = e.x;
+    f.y = f.startY = e.y;
+    f.downTime = SDL_GetTicks();
+    f.active = true;
+    f.moved = false;
+
+    fingers[e.fingerID] = f;
+
+    if (fingers.size() == 1)
+    {
+        // 单击->左键
+        _state = STATE_SINGLE_FINGER;
+    }
+    else if (fingers.size() == 2)
+    {
+        // 双击->右键
+        _state = STATE_MULTI_FINGER;
+    }
+    else
+    {
+        // 三击->菜单
+        _state = STATE_MENU;
+        int windowWidth, windowHeight;
+        SDL_GetWindowSize(tvp_window, &windowWidth, &windowHeight);
+        int pixelX = static_cast<int>(f.x * windowWidth);
+        int pixelY = static_cast<int>(f.y * windowHeight);
+        TVPInvokeMenu(pixelX, pixelY);
+        fingers.clear();
+        _state = STATE_IDLE;
+    }
+}
+void handleFingerUp(const SDL_TouchFingerEvent& e)
+{
+    auto it = fingers.find(e.fingerID);
+    if (it == fingers.end())
+        return;
+
+    Finger& f = it->second;
+    f.active = false;
+
+    if (fingers.size() == 1)
+    {
+        if (_state == STATE_SINGLE_FINGER)
+        {
+            if (!f.moved)
+                sendMouseEvent(SDL_BUTTON_LEFT, SDL_EVENT_MOUSE_BUTTON_DOWN, f.x, f.y);
+            sendMouseEvent(SDL_BUTTON_LEFT, SDL_EVENT_MOUSE_BUTTON_UP, f.x, f.y);
+        }
+        else if (_state == STATE_MULTI_FINGER)
+        {
+            if (!f.moved)
+                sendMouseEvent(SDL_BUTTON_RIGHT, SDL_EVENT_MOUSE_BUTTON_DOWN, f.x, f.y);
+            sendMouseEvent(SDL_BUTTON_RIGHT, SDL_EVENT_MOUSE_BUTTON_UP, f.x, f.y);
+        }
+        _state = STATE_IDLE;
+    }
+
+    fingers.erase(it);
+}
+void handleFingerMotion(const SDL_TouchFingerEvent& e)
+{
+    auto it = fingers.find(e.fingerID);
+    if (it == fingers.end())
+        return;
+
+    Finger& f = it->second;
+
+    // 检查是否移动
+    float dx = e.x - f.startX;
+    float dy = e.y - f.startY;
+    float moveDist = dx * dx + dy * dy;
+
+    if (moveDist > 0.0001f)
+    { // 移动阈值
+        f.moved = true;
+        f.x = e.x;
+        f.y = e.y;
+
+        if (_state == STATE_SINGLE_FINGER)
+        {
+            // 单指移动，发送鼠标移动
+            sendMouseMotion(f.x, f.y);
+        }
+    }
+}
+
+void sendMouseEvent(int button, int eventType, float pX, float pY)
+{
+    int windowWidth, windowHeight;
+    SDL_GetWindowSize(tvp_window, &windowWidth, &windowHeight);
+    int pixelX = static_cast<int>(pX * windowWidth);
+    int pixelY = static_cast<int>(pY * windowHeight);
+
+    tTVPMouseButton tmp = mbX1;
+    switch (button)
+    {
+        case SDL_BUTTON_RIGHT:
+            tmp = mbRight;
+            break;
+        case SDL_BUTTON_MIDDLE:
+            tmp = mbMiddle;
+            break;
+        case SDL_BUTTON_LEFT:
+            tmp = mbLeft;
+            break;
+        default:
+            break;
+    }
+
+    if (tmp != mbX1)
+    {
+        if (eventType == SDL_EVENT_MOUSE_BUTTON_DOWN)
+        {
+            krkrsdl3::KRKR_Trig_MouseDown(tmp, pixelX, pixelY);
+        }
+        else if (eventType == SDL_EVENT_MOUSE_BUTTON_UP)
+        {
+            krkrsdl3::KRKR_Trig_MouseUp(tmp, pixelX,pixelY);
+        }
+    }
+}
+void sendMouseMotion(float pX, float pY)
+{
+    int windowWidth, windowHeight;
+    SDL_GetWindowSize(tvp_window, &windowWidth, &windowHeight);
+    int pixelX = static_cast<int>(pX * windowWidth);
+    int pixelY = static_cast<int>(pY * windowHeight);
+    krkrsdl3::KRKR_Trig_MouseMove(pixelX,pixelY);
+}
+#endif
+
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
+{
+    switch (event->type)
+    {
+        // 退出
+        case SDL_EVENT_QUIT:
+        {
+            tTJSNI_Window* tmpwind = TVPGetActiveWindow();
+            tmpwind->Close();
+            break;
+        }
+        // 键盘事件
+        case SDL_EVENT_KEY_DOWN:
+        {
+            if (event->key.scancode == SDL_SCANCODE_F1)
+            {
+                int x = 0, y = 0;
+                SDL_GetWindowPosition(tvp_window, &x, &y);
+                TVPInvokeMenu(x, y);
+                break;
+            }
+
+            krkrsdl3::KRKR_Trig_KeyDown(event->key.scancode);
+            break;
+        }
+        case SDL_EVENT_KEY_UP:
+        {
+            krkrsdl3::KRKR_Trig_KeyUp(event->key.scancode);
+            break;
+        }
+        // 文字输入
+        case SDL_EVENT_TEXT_INPUT:
+        {
+            std::string data(event->text.text);
+            krkrsdl3::KRKR_Trig_TextInput(data);
+            break;
+        }
+#if defined(_KRKRSDL3_WINDOWS) || defined(_KRKRSDL3_LINUX) || defined(_KRKRSDL3_EMSCRIPTEN)
+        // 鼠标事件
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        {
+            tTVPMouseButton tmp = mbX1;
+            switch (event->button.button)
+            {
+                case SDL_BUTTON_RIGHT:
+                    tmp = mbRight;
+                    break;
+                case SDL_BUTTON_MIDDLE:
+                    tmp = mbMiddle;
+                    break;
+                case SDL_BUTTON_LEFT:
+                    tmp = mbLeft;
+                    break;
+                default:
+                    break;
+            }
+
+            if (tmp != mbX1)
+            {
+                krkrsdl3::KRKR_Trig_MouseDown(tmp, event->button.x, event->button.y);
+            }
+            break;
+        }
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+        {
+            tTVPMouseButton tmp = mbX1;
+            switch (event->button.button)
+            {
+                case SDL_BUTTON_RIGHT:
+                    tmp = mbRight;
+                    break;
+                case SDL_BUTTON_MIDDLE:
+                    tmp = mbMiddle;
+                    break;
+                case SDL_BUTTON_LEFT:
+                    tmp = mbLeft;
+                    break;
+                default:
+                    break;
+            }
+
+            if (tmp != mbX1)
+            {
+                krkrsdl3::KRKR_Trig_MouseUp(tmp, event->button.x, event->button.y);
+            }
+            break;
+        }
+        case SDL_EVENT_MOUSE_MOTION:
+        {
+            krkrsdl3::KRKR_Trig_MouseMove(event->motion.x, event->motion.y);
+            break;
+        }
+        case SDL_EVENT_MOUSE_WHEEL:
+        {
+            krkrsdl3::KRKR_Trig_MouseScroll(event->wheel.x, event->wheel.y, event->wheel.x,
+                                                event->wheel.y);
+            break;
+        }
+#endif
+#if defined(_KRKRSDL3_ANDROID) || defined(_KRKRSDL3_EMSCRIPTEN) || defined(_KRKRSDL3_IOS)
+        // 触屏事件
+        case SDL_EVENT_FINGER_DOWN:
+            handleFingerDown(event->tfinger);
+            break;
+        case SDL_EVENT_FINGER_UP:
+            handleFingerUp(event->tfinger);
+            break;
+        case SDL_EVENT_FINGER_MOTION:
+            handleFingerMotion(event->tfinger);
+            break;
+#endif
+        default:
+            break;
+    }
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppIterate(void* appstate)
+{
+    if (!::Application->Run())
+        return SDL_APP_SUCCESS;
+    // 写入缓冲区
+    int RW = 1280, RH = 720;
+    SDL_GetWindowSize(tvp_window, &RW, &RH);
+#if defined(_KRKRSDL3_IOS)
+    // iOS: 软渲染(与renderer="software"的SW路径匹配)
+    SDL_SetRenderDrawColor(tvp_renderer, 0, 0, 0, 0);
+    SDL_RenderClear(tvp_renderer);
+    krkrsdl3::TVPRenderOnce(RW, RH);
+    SDL_RenderPresent(tvp_renderer);
+#else
+    if (TVPSettings.renderer == "opengl")
+    {
+        // 合成器完成渲染
+        krkrsdl3::TVPRenderOnce(RW, RH);
+        // 渲染
+        SDL_GL_SwapWindow(tvp_window);
+    }
+    else
+    {
+        // 写入缓冲区
+        SDL_SetRenderDrawColor(tvp_renderer, 0, 0, 0, 0);
+        SDL_RenderClear(tvp_renderer);
+        // 合成器完成渲染
+        krkrsdl3::TVPRenderOnce(RW, RH);
+        // 渲染
+        SDL_RenderPresent(tvp_renderer);
+    }
+#endif
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_Fail()
+{
+    SDL_LogError(SDL_LOG_CATEGORY_CUSTOM, "Error %s", SDL_GetError());
+    return SDL_APP_FAILURE;
+}
+
+void SDL_AppQuit(void* appstate, SDL_AppResult result)
+{
+    if (Application)
+    {
+        ::Application->OnExit();
+        delete Application;
+        Application = NULL;
+    }
+#if defined(_KRKRSDL3_IOS)
+    SDL_DestroyRenderer(tvp_renderer);
+#else
+    if (TVPSettings.renderer == "opengl")
+        SDL_GL_DestroyContext(tvp_glContext);
+    else
+        SDL_DestroyRenderer(tvp_renderer);
+#endif
+    SDL_DestroyWindow(tvp_window);
+    SDL_Log("KRKRSDL3 quit successfully!");
+    SDL_Quit();
+    TVPClearAllArguments();
+}
+
+void TVPSetWindowTitle(const char* title)
+{
+    SDL_SetWindowTitle(tvp_window, title);
+}
+
+std::string TVPGetWindowTitle()
+{
+    return SDL_GetWindowTitle(tvp_window);
+}
+
+void TVPSetWindowFullscreen(bool isFullscreen)
+{
+    SDL_SetWindowFullscreen(tvp_window, isFullscreen);
+}
+
+void TVPGetWindowSize(int* w, int* h)
+{
+    SDL_GetWindowSize(tvp_window, w, h);
+}
+
+void TVPSetWindowSize(int w, int h)
+{
+    SDL_SetWindowSize(tvp_window, w, h);
+}
+
+int TVPDrawSceneOnce(int interval)
+{
+    static tjs_uint64 lastTick = TVPGetRoughTickCount();
+    tjs_uint64 curTick = TVPGetRoughTickCount();
+    int remain = interval - (curTick - lastTick);
+    if (remain <= 0)
+    {
+        SDL_AppIterate(NULL);
+        SDL_Event event;
+        while (SDL_PollEvent(&event))
+        {
+            SDL_AppEvent(NULL, &event);
+        }
+        lastTick = curTick;
+        return 0;
+    }
+    else
+    {
+        return remain;
+    }
+}
+
+void TVPShowIME(int x, int y, int w, int h)
+{
+    SDL_StartTextInput(tvp_window);
+}
+
+void TVPHideIME()
+{
+    SDL_StopTextInput(tvp_window);
+}
+
+int TVPConvertKeyCodeToVKCode(int keyCode)
+{
+#define CASE(x) \
+    case SDL_SCANCODE_##x: \
+        return VK_##x
+
+    SDL_Scancode tmp = (SDL_Scancode)keyCode;
+    switch (tmp)
+    {
+        CASE(0);
+        CASE(1);
+        CASE(2);
+        CASE(3);
+        CASE(4);
+        CASE(5);
+        CASE(6);
+        CASE(7);
+        CASE(8);
+        CASE(9);
+        CASE(A);
+        CASE(B);
+        CASE(C);
+        CASE(D);
+        CASE(E);
+        CASE(F);
+        CASE(G);
+        CASE(H);
+        CASE(I);
+        CASE(J);
+        CASE(K);
+        CASE(L);
+        CASE(M);
+        CASE(N);
+        CASE(O);
+        CASE(P);
+        CASE(Q);
+        CASE(R);
+        CASE(S);
+        CASE(T);
+        CASE(U);
+        CASE(V);
+        CASE(W);
+        CASE(X);
+        CASE(Y);
+        CASE(Z);
+        CASE(F1);
+        CASE(F2);
+        CASE(F3);
+        CASE(F4);
+        CASE(F5);
+        CASE(F6);
+        CASE(F7);
+        CASE(F8);
+        CASE(F9);
+        CASE(F10);
+        CASE(F11);
+        CASE(F12);
+        CASE(PAUSE);
+        CASE(ESCAPE);
+        CASE(CANCEL);
+        CASE(INSERT);
+        CASE(HOME);
+        CASE(DELETE);
+        CASE(END);
+        CASE(SPACE);
+        case SDL_SCANCODE_PRINTSCREEN:
+            return VK_PRINT;
+            CASE(TAB);
+            CASE(RETURN);
+        case SDL_SCANCODE_SCROLLLOCK:
+            return VK_SCROLL;
+        case SDL_SCANCODE_SYSREQ:
+            return VK_SNAPSHOT;
+        case SDL_SCANCODE_BACKSPACE:
+            return VK_BACK;
+        case SDL_SCANCODE_CAPSLOCK:
+            return VK_CAPITAL;
+        case SDL_SCANCODE_LSHIFT:
+            return VK_SHIFT; // LR the same
+        case SDL_SCANCODE_RSHIFT:
+            return VK_SHIFT;
+        case SDL_SCANCODE_LCTRL:
+            return VK_CONTROL; // LR the same
+        case SDL_SCANCODE_RCTRL:
+            return VK_CONTROL;
+        case SDL_SCANCODE_LALT:
+            return VK_MENU;
+        case SDL_SCANCODE_RALT:
+            return VK_MENU;
+        case SDL_SCANCODE_MENU:
+            return VK_APPS;
+        case SDL_SCANCODE_PAGEUP:
+            return VK_PRIOR;
+        case SDL_SCANCODE_PAGEDOWN:
+            return VK_NEXT;
+        case SDL_SCANCODE_LEFT:
+            return VK_LEFT;
+        case SDL_SCANCODE_RIGHT:
+            return VK_RIGHT;
+        case SDL_SCANCODE_UP:
+            return VK_UP;
+        case SDL_SCANCODE_DOWN:
+            return VK_DOWN;
+        case SDL_SCANCODE_NUMLOCKCLEAR:
+            return VK_NUMLOCK;
+        case SDL_SCANCODE_KP_PLUS:
+            return VK_ADD;
+        case SDL_SCANCODE_KP_MINUS:
+            return VK_SUBTRACT;
+        case SDL_SCANCODE_KP_MULTIPLY:
+            return VK_MULTIPLY;
+        case SDL_SCANCODE_KP_DIVIDE:
+            return VK_DIVIDE;
+        case SDL_SCANCODE_KP_ENTER:
+            return VK_RETURN;
+        case SDL_SCANCODE_COMMA:
+            return VK_OEM_COMMA;
+        case SDL_SCANCODE_MINUS:
+            return VK_OEM_MINUS;
+        case SDL_SCANCODE_PERIOD:
+            return VK_OEM_PERIOD;
+        case SDL_SCANCODE_EQUALS:
+            return VK_OEM_PLUS;
+        case SDL_SCANCODE_SLASH:
+            return VK_OEM_2;
+        case SDL_SCANCODE_SEMICOLON:
+            return VK_OEM_1;
+        case SDL_SCANCODE_BACKSLASH:
+            return VK_OEM_5;
+        case SDL_SCANCODE_LEFTBRACKET:
+            return VK_OEM_4;
+        case SDL_SCANCODE_RIGHTBRACKET:
+            return VK_OEM_6;
+        case SDL_SCANCODE_MEDIA_PLAY:
+            return VK_PLAY;
+        default:
+            return 0;
+    }
+}
+
+std::vector<std::string> TVPListAllRenderBackend()
+{
+    ttstr log(TJS_N("Available Render:"));
+    std::vector<std::string> backends;
+    int count = SDL_GetNumRenderDrivers();
+    for (int i = 0; i < count; i++)
+    {
+        const char* name = SDL_GetRenderDriver(i);
+        if (name)
+        {
+            backends.push_back(name);
+            log += " " + ttstr((const char*)name);
+        }
+    }
+    TVPAddImportantLog(log);
+
+    return backends;
+}
+
+void TVPCreateTextureBackend(TVPSprite& sp)
+{
+    sp.texture.swTexture = SDL_CreateTexture(tvp_renderer, SDL_PIXELFORMAT_ABGR8888,
+                                             SDL_TEXTUREACCESS_STREAMING, sp.width, sp.height);
+    SDL_BlendMode customBlendMode =
+        SDL_ComposeCustomBlendMode(SDL_BLENDFACTOR_ONE,                 // 源因子
+                                   SDL_BLENDFACTOR_ZERO,                // 目标因子
+                                   SDL_BLENDOPERATION_ADD,              // 混合操作
+                                   SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, // 源因子（Alpha）
+                                   SDL_BLENDFACTOR_SRC_ALPHA,           // 目标因子（Alpha）
+                                   SDL_BLENDOPERATION_ADD               // 混合操作（Alpha）
+        );
+    SDL_SetTextureBlendMode((SDL_Texture*)sp.texture.swTexture, customBlendMode);
+}
+
+void TVPUpdateTextureBackend(TVPSprite* sp, uint8_t* buff, int width, int height, int pitch)
+{
+    SDL_UpdateTexture((SDL_Texture*)sp->texture.swTexture, nullptr, buff, pitch);
+}
+
+void TVPDestroyTextureBackend(TVPSprite* sp)
+{
+    SDL_DestroyTexture((SDL_Texture*)sp->texture.swTexture);
+}
+
+void TVPRenderTextureBackend(TVPSprite* sp, int posX, int posY, int width, int height)
+{
+    SDL_FRect rectBuff;
+    rectBuff.x = posX;
+    rectBuff.y = posY;
+    rectBuff.w = width;
+    rectBuff.h = height;
+    SDL_RenderTexture(tvp_renderer, (SDL_Texture*)sp->texture.swTexture, NULL, &rectBuff);
+}
