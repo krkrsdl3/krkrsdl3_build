@@ -1,7 +1,7 @@
 @echo off
 
 echo [1/2] Configuring CMake for Emscripten...
-cmake --preset="Emscripten Config" -DUSE_FFMPEG=OFF
+cmake --preset="Emscripten Config" -DUSE_FFMPEG=OFF -DUSE_RENDER_VK=OFF
 echo[
 
 echo [2/2] Building Release version...

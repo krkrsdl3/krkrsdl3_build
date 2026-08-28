@@ -23,6 +23,7 @@ set(KRKRSDL_PLUGINS_SRC
     ${KRKRSDL_PLUGINS_PATH}/LayerExPerspective.cpp
     ${KRKRSDL_PLUGINS_PATH}/LayerExRaster.cpp
     ${KRKRSDL_PLUGINS_PATH}/LayerExSave.cpp
+    ${KRKRSDL_PLUGINS_PATH}/lzfs.cpp
     ${KRKRSDL_PLUGINS_PATH}/motionPlayer.cpp
     ${KRKRSDL_PLUGINS_PATH}/PackinOne.cpp
     ${KRKRSDL_PLUGINS_PATH}/saveStruct.cpp

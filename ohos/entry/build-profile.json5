@@ -3,8 +3,8 @@
   "buildOption": {
     "externalNativeOptions": {
       "path": "../../CMakeLists.txt",
-      "arguments": "-DOHOS=TRUE -DOHOS_STL=c++_shared -DUSE_FFMPEG=ON -DUSE_SDL3=OFF",
-      "abiFilters": ["arm64-v8a", "x86_64"],
+      "arguments": "-DOHOS=TRUE -DOHOS_STL=c++_shared -DUSE_FFMPEG=ON -DUSE_SDL3=OFF  -DUSE_RENDER_VK=OFF",
+      "abiFilters": ["arm64-v8a"],
       "cppFlags": "--std=c++17"
     }
   },
