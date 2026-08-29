@@ -14,23 +14,34 @@
         "freetype",
         "plutovg",
 
-        "sdl2",
-        "sdl2-ttf",
+        {
+            "name": "sdl2",
+            "platform": "!ios"
+        },
+        {
+            "name": "sdl2-ttf",
+            "platform": "!ios"
+        },
         {
             "name": "sdl3",
-            "features": ["vulkan"]
+            "features": ["vulkan"],
+            "platform": "!ios & !osx"
+        },
+        {
+            "name": "sdl3",
+            "platform": "ios | osx"
         },
         "sdl3-ttf",
         "glm",
         {
             "name": "glad",
             "features": ["loader"],
-            "platform": "windows | linux"
+            "platform": "windows | linux | osx"
         },
         {
             "name": "glad",
             "features": ["egl", "loader"],
-            "platform": "android | emscripten"
+            "platform": "android | emscripten | ios"
         },
         {
             "name": "vulkan",

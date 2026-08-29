@@ -66,7 +66,15 @@ elseif(EMSCRIPTEN)
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/emscripten/wasm_shell.html"
         "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/Res@/Res"
     )
-elseif(LINUX OR WINDOWS)
+elseif(IOS)
+    add_executable(${PROJECT_NAME} MACOSX_BUNDLE ${KRKRSDL_SRC})
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        MACOSX_BUNDLE TRUE
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "org.tvp.krkrsdl3"
+        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    )
+elseif(LINUX OR WINDOWS OR MACOS)
     add_executable(${PROJECT_NAME} ${KRKRSDL_SRC})
 else()
     message(FATAL_ERROR "unsupported: ${CMAKE_SYSTEM_NAME}")
@@ -148,8 +156,10 @@ if(NOT OHOS)
         find_package(Freetype REQUIRED)
         target_link_libraries(${PROJECT_NAME} PRIVATE Freetype::Freetype) # since CMake 3.10
 
-        find_package(glad CONFIG REQUIRED)
-        target_link_libraries(${PROJECT_NAME} PRIVATE glad::glad)
+        if(USE_RENDER_GL)
+            find_package(glad CONFIG REQUIRED)
+            target_link_libraries(${PROJECT_NAME} PRIVATE glad::glad)
+        endif()
     endif()
 
     find_package(glm CONFIG REQUIRED)
@@ -239,15 +249,46 @@ elseif(OHOS)
         native_media_codecbase native_media_core native_media_avsource native_media_avdemuxer
         native_media_vdec native_media_adec native_media_avmuxer
     )
+elseif(MACOS)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        "-framework Foundation"
+        "-framework AppKit"
+        "-framework CoreGraphics"
+        "-framework QuartzCore"
+        "-framework IOKit"
+        "-framework ForceFeedback"
+        "-framework GameController"
+        "-framework AudioToolbox"
+        "-framework Carbon"
+    )
+    if(USE_RENDER_GL)
+        target_link_libraries(${PROJECT_NAME} PRIVATE "-framework OpenGL")
+    endif()
+elseif(IOS)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        "-framework Foundation"
+        "-framework UIKit"
+        "-framework CoreGraphics"
+        "-framework QuartzCore"
+        "-framework AVFoundation"
+        "-framework AudioToolbox"
+        "-framework GameController"
+        "-framework Metal"
+        "-framework OpenGLES"
+    )
 endif()
 
 #
 # 3. 完事后拷贝资源
 #
 
-if(LINUX OR WINDOWS)
+if(LINUX OR WINDOWS OR MACOS)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/Res
         $<TARGET_FILE_DIR:${PROJECT_NAME}>/Res)
+elseif(IOS)
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/Res/DroidSansFallback.ttf PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources/Res)
+    target_sources(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Res/DroidSansFallback.ttf)
 endif()

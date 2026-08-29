@@ -1,6 +1,6 @@
 # 介绍
 
-krkrsdl3的构建系统仓库，目前支持windows/linux/android/WebAssembly/HarmonyOS系统。
+krkrsdl3的构建系统仓库，目前支持 windows/linux/android/WebAssembly/HarmonyOS/macOS/IOS系统。
 
 # 目录结构说明
 
@@ -28,6 +28,7 @@ krkrsdl3的构建系统仓库，目前支持windows/linux/android/WebAssembly/Ha
 - Android SDK/Android NDK:安卓构建工具链
 - Emscripten SDK:WebAssembly构建工具链
 - DevEco Studio:鸿蒙开发工具
+- Xcode/Apple Command Line Tools:macOS 构建可用 CLT；iOS 需要完整 Xcode/iOS SDK。
 
 # 补充说明
 

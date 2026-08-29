@@ -18,7 +18,7 @@ set(KRKRSDL_SRC
 #
 
 # 可执行文件
-if(LINUX OR WINDOWS)
+if(LINUX OR WINDOWS OR MACOS)
     add_executable(${PROJECT_NAME} ${KRKRSDL_SRC})
 else()
     message(FATAL_ERROR "unsupported: ${CMAKE_SYSTEM_NAME}")

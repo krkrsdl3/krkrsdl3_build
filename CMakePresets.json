@@ -41,10 +41,10 @@
             },
             "binaryDir": "${sourceDir}/out/windows-msvc",
             "vendor": {
-				"microsoft.com/VisualStudioSettings/CMake/1.0": {
-					"hostOS": ["Windows"]
-				}
-			}
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": ["Windows"]
+                }
+            }
         },
         {
             "name": "Windows Config 32",
@@ -62,18 +62,18 @@
             },
             "binaryDir": "${sourceDir}/out/windows-32",
             "vendor": {
-				"microsoft.com/VisualStudioSettings/CMake/1.0": {
-					"hostOS": ["Windows"]
-				}
-			}
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": ["Windows"]
+                }
+            }
         },
-		{
+        {
             "name": "Windows Config Console",
             "generator": "Visual Studio 17 2022",
             "cacheVariables": {
                 "WINDOWS": true,
                 "MSVC": true,
-				"ONLYCONSOLE": true,
+                "ONLYCONSOLE": true,
                 "CMAKE_EXPORT_COMPILE_COMMANDS": true
             },
             "condition": {
@@ -83,12 +83,12 @@
             },
             "binaryDir": "${sourceDir}/out/windows-console",
             "vendor": {
-				"microsoft.com/VisualStudioSettings/CMake/1.0": {
-					"hostOS": ["Windows"]
-				}
-			}
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": ["Windows"]
+                }
+            }
         },
-		{
+        {
             "name": "Linux Config",
             "generator": "Ninja Multi-Config",
             "cacheVariables": {
@@ -105,12 +105,12 @@
             },
             "binaryDir": "${sourceDir}/out/linux"
         },
-		{
+        {
             "name": "Linux Config Console",
             "generator": "Ninja Multi-Config",
             "cacheVariables": {
                 "LINUX": true,
-				"ONLYCONSOLE": true,
+                "ONLYCONSOLE": true,
                 "CMAKE_MAKE_PROGRAM": "ninja",
                 "CMAKE_C_COMPILER": "gcc",
                 "CMAKE_CXX_COMPILER": "g++",
@@ -123,7 +123,7 @@
             },
             "binaryDir": "${sourceDir}/out/linux-console"
         },
-		{
+        {
             "name": "Emscripten Config",
             "generator": "Ninja Multi-Config",
             "cacheVariables": {
@@ -137,6 +137,92 @@
             },
             "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
             "binaryDir": "${sourceDir}/out/emscripten"
+        },
+        {
+            "name": "macOS Config",
+            "generator": "Ninja Multi-Config",
+            "cacheVariables": {
+                "MACOS": true,
+                "CMAKE_SYSTEM_NAME": "Darwin",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0",
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "CMAKE_MAKE_PROGRAM": "ninja",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "USE_RENDER_GL": true,
+                "CMAKE_EXPORT_COMPILE_COMMANDS": true
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "binaryDir": "${sourceDir}/out/macos"
+        },
+        {
+            "name": "macOS Config Console",
+            "generator": "Ninja Multi-Config",
+            "cacheVariables": {
+                "MACOS": true,
+                "ONLYCONSOLE": true,
+                "CMAKE_SYSTEM_NAME": "Darwin",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0",
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "CMAKE_MAKE_PROGRAM": "ninja",
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": true
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "binaryDir": "${sourceDir}/out/macos-console"
+        },
+        {
+            "name": "iOS Simulator Config",
+            "generator": "Xcode",
+            "cacheVariables": {
+                "IOS": true,
+                "CMAKE_SYSTEM_NAME": "iOS",
+                "CMAKE_OSX_SYSROOT": "iphonesimulator",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0",
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "VCPKG_TARGET_TRIPLET": "arm64-ios-simulator",
+                "USE_FFMPEG": true,
+                "USE_RENDER_GL": true,
+                "USE_RENDER_VK": false,
+                "CMAKE_EXPORT_COMPILE_COMMANDS": true
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "binaryDir": "${sourceDir}/out/ios-simulator"
+        },
+        {
+            "name": "iOS Device Config",
+            "generator": "Xcode",
+            "cacheVariables": {
+                "IOS": true,
+                "CMAKE_SYSTEM_NAME": "iOS",
+                "CMAKE_OSX_SYSROOT": "iphoneos",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0",
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "VCPKG_TARGET_TRIPLET": "arm64-ios",
+                "USE_FFMPEG": true,
+                "USE_RENDER_GL": true,
+                "USE_RENDER_VK": false,
+                "CMAKE_EXPORT_COMPILE_COMMANDS": true
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "binaryDir": "${sourceDir}/out/ios-device"
         }
     ],
     "buildPresets": [
@@ -170,7 +256,7 @@
             "configurePreset": "Windows Config 32",
             "configuration": "Release"
         },
-		{
+        {
             "name": "Windows Debug Build Console",
             "configurePreset": "Windows Config Console",
             "configuration": "Debug"
@@ -208,6 +294,46 @@
         {
             "name": "Emscripten Release Build",
             "configurePreset": "Emscripten Config",
+            "configuration": "Release"
+        },
+        {
+            "name": "macOS Debug Build",
+            "configurePreset": "macOS Config",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macOS Release Build",
+            "configurePreset": "macOS Config",
+            "configuration": "Release"
+        },
+        {
+            "name": "macOS Debug Build Console",
+            "configurePreset": "macOS Config Console",
+            "configuration": "Debug"
+        },
+        {
+            "name": "macOS Release Build Console",
+            "configurePreset": "macOS Config Console",
+            "configuration": "Release"
+        },
+        {
+            "name": "iOS Simulator Debug Build",
+            "configurePreset": "iOS Simulator Config",
+            "configuration": "Debug"
+        },
+        {
+            "name": "iOS Simulator Release Build",
+            "configurePreset": "iOS Simulator Config",
+            "configuration": "Release"
+        },
+        {
+            "name": "iOS Device Debug Build",
+            "configurePreset": "iOS Device Config",
+            "configuration": "Debug"
+        },
+        {
+            "name": "iOS Device Release Build",
+            "configurePreset": "iOS Device Config",
             "configuration": "Release"
         }
     ]
