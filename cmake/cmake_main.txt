@@ -99,6 +99,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 # 依赖库
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tests/bpg ${CMAKE_CURRENT_BINARY_DIR}/bpg)
+target_link_libraries(${PROJECT_NAME} PRIVATE krkr_bpg)
+
 if(OHOS)
     # OHOS: use prebuilt deps from out/ohos/deps/install/
     set(OHOS_DEPS "${CMAKE_SOURCE_DIR}/out/ohos/deps/install/${OHOS_ARCH}")

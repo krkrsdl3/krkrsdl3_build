@@ -131,6 +131,7 @@ set(KRKRSDL_PLUGINS_SRC
     ${KRKRSDL_PLUGINS_PATH}/Kirikiroid2/7zip/Sha3.c
     ${KRKRSDL_PLUGINS_PATH}/Kirikiroid2/7zip/Sha512.c
     ${KRKRSDL_PLUGINS_PATH}/Kirikiroid2/7zip/Sha512Opt.c
+    ${KRKRSDL_PLUGINS_PATH}/Kirikiroid2/LoadBPG.cpp
     ${KRKRSDL_PLUGINS_PATH}/Kirikiroid2/LoadJPEG.cpp
     ${KRKRSDL_PLUGINS_PATH}/Kirikiroid2/LoadPNG.cpp
     ${KRKRSDL_PLUGINS_PATH}/Kirikiroid2/LoadWEBP.cpp

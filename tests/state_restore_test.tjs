@@ -1,0 +1,41 @@
+// Integration regression: run with an already loaded PSB from the host game.
+// The game's storage switch saves state BEFORE the first model is loaded.
+function verifyEmoteStateRestore(manager, path, metadata) {
+  var result = [];
+  var cold = new Motion.EmotePlayer(manager);
+  var emptyState = cold.serialize();
+  cold.motionKey = Storages.getPlacedPath(path);
+  cold.chara = metadata.base.chara;
+  cold.play(metadata.base.motion, Motion.PlayFlagForce);
+  cold.initPhysics(metadata);
+  cold.unserialize(emptyState);
+  cold.progress(1000.0 / 60);
+  result.add("coldStartTick," + cold.tickCount);
+  if (cold.tickCount <= 0) throw new Exception("Empty-player state stopped newly loaded model: " + cold.tickCount);
+
+  // Snapshots from the faulty implementation must also remain loadable.
+  emptyState.clockPassed = -1;
+  emptyState._playing = false;
+  emptyState._isStop = true;
+  cold.play(metadata.base.motion, Motion.PlayFlagForce);
+  cold.initPhysics(metadata);
+  cold.unserialize(emptyState);
+  cold.progress(1000.0 / 60);
+  result.add("legacyEmptyTick," + cold.tickCount);
+  if (cold.tickCount <= 0) throw new Exception("Legacy playback flags stopped newly loaded model");
+
+  // Replacing a finished model transfers its controls, not its playback clock.
+  cold.progress(2000);
+  var finishedState = cold.serialize();
+  var replacement = new Motion.EmotePlayer(manager);
+  replacement.motionKey = Storages.getPlacedPath(path);
+  replacement.chara = metadata.base.chara;
+  replacement.play(metadata.base.motion, Motion.PlayFlagForce);
+  replacement.initPhysics(metadata);
+  replacement.unserialize(finishedState);
+  replacement.progress(1000.0 / 60);
+  result.add("replacementTick," + replacement.tickCount);
+  if (replacement.tickCount <= 0 || replacement.tickCount > 2)
+    throw new Exception("Previous model playback clock leaked into replacement");
+  return result;
+}
