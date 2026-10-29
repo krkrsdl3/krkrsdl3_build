@@ -40,6 +40,12 @@ foreach(file IN LISTS bpg_files)
     elseif(file STREQUAL "libavcodec/hevcdsp.c")
         string(REPLACE "    if (ARCH_X86)\n        krkr_bpg_ff_hevc_dsp_init_x86(hevcdsp, bit_depth);"
             "#if ARCH_X86\n    krkr_bpg_ff_hevc_dsp_init_x86(hevcdsp, bit_depth);\n#endif" text "${text}")
+    elseif(file STREQUAL "libbpg.c")
+        # LoadHeaderBPG 使用 bpg_decoder_get_info_from_buf 查询图像尺寸。
+        # 上游把这个函数排除在 EMSCRIPTEN 构建之外，但实现本身不依赖
+        # 被裁剪的扩展数据功能，Emscripten 下同样可以编译。
+        string(REPLACE "#ifndef EMSCRIPTEN\nvoid bpg_decoder_keep_extension_data"
+            "#if 1\nvoid bpg_decoder_keep_extension_data" text "${text}")
     endif()
     get_filename_component(dir "${bpg_private}/${file}" DIRECTORY)
     file(MAKE_DIRECTORY "${dir}")
@@ -74,8 +80,17 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include")
 configure_file("${krkr_bpg_upstream_SOURCE_DIR}/libbpg.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/libbpg.h" COPYONLY)
 target_include_directories(krkr_bpg INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/include")
+if(EMSCRIPTEN)
+    # 主程序使用 USE_PTHREADS，静态库中的目标也必须带 atomics/bulk-memory，
+    # 否则 wasm-ld 会以 --shared-memory 不被支持为由拒绝链接。
+    target_compile_options(krkr_bpg PRIVATE "-pthread" "-matomics" "-mbulk-memory")
+endif()
 if(MSVC)
     target_compile_options(krkr_bpg PRIVATE /wd4996)
-elseif(NOT WIN32)
+else()
+    # libbpg 是锁定版本的上游解码器，不把其历史告警混进本项目的构建输出。
+    target_compile_options(krkr_bpg PRIVATE -w)
+endif()
+if(NOT WIN32)
     target_link_libraries(krkr_bpg PRIVATE m)
 endif()
