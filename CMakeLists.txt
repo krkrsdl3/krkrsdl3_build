@@ -81,16 +81,23 @@ endif()
 
 # SDL版本选择: ON=SDL3, OFF=SDL2
 option(USE_SDL3 "Use SDL3 (OFF for SDL2)" ON)
-if((ANDROID OR IOS) AND NOT USE_SDL3)
-    # android/iOS由于存在平台入口与触屏层，所以不支持SDL2
-    message(FATAL_ERROR "安卓/iOS 不支持 SDL2 作为硬件后端")
-endif()
+# 离屏自动化测试宿主（AutoTest / -offscreen / -silent / -frames / -dump / -at_harness）
+# 关掉后所有入口在头文件里内联成空实现，主循环与送显路径不留任何调用开销
+option(ENABLE_AUTOTEST "Build the offscreen AutoTest host (tests/autotest.md)" ON)
 # 视频解码后端: ON=FFmpeg, OFF=系统API(MediaFoundation/MediaCodec)
 # 感觉没必要禁用，OFF的实现基本没用༼ ༎ຶ ෴ ༎ຶ༽
 option(USE_FFMPEG "Use FFmpeg for video/audio decoding" ON)
 # 图形后端编译选项
 option(USE_RENDER_GL "OpenGL 3.3+/OpenGLES 3.0+ backend" ON)
 option(USE_RENDER_VK "Vulkan backend" ON)
+
+if((ANDROID OR IOS) AND NOT USE_SDL3)
+    # android/iOS由于存在平台入口与触屏层，所以不支持SDL2
+    message(FATAL_ERROR "安卓/iOS 不支持 SDL2 作为硬件后端")
+endif()
+if(ENABLE_AUTOTEST)
+    add_definitions(-D_KRKRSDL3_AUTOTEST=1)
+endif()
 
 # 建立项目
 if(ONLYCONSOLE)

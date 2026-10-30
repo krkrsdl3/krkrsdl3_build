@@ -1,0 +1,48 @@
+// 启动旅程宿主：游戏已正常启动，这里只按帧推进、逐段截图，并把状态写成 state.txt。
+// 由 tests/run.py 通过 -at_harness 加载；旋钮：-at_out -at_frames -at_every
+Plugins.link("autotest.dll");
+
+function knob(name, dflt)
+{
+    var v = System.getArgument(name);
+    if (v == "")
+        return dflt;
+    return v - 0;
+}
+
+var out = System.getArgument("-at_out");
+if (out == "")
+    throw "harness_boot.tjs 需要 -at_out=<输出目录>";
+var total = knob("-at_frames", 600);
+var every = knob("-at_every", 120);
+
+var shots = [];
+var trace = "";
+var done = 0;
+while (done < total)
+{
+    var step = every;
+    if (done + step > total)
+        step = total - done;
+    AutoTest.pump(step);
+    done += step;
+    var path = out + "/boot_" + done + ".png";
+    if (AutoTest.capture(path))
+        shots.add(path);
+    trace += "frame=" + done + " title=" + AutoTest.title() +
+             " sum=" + AutoTest.checksum() + " lum=" + AutoTest.brightness() + "\n";
+}
+
+var state = "";
+state += "pumped=" + done + "\n";
+state += "engineFrames=" + AutoTest.frame() + "\n";
+state += "size=" + AutoTest.size() + "\n";
+state += "offscreen=" + AutoTest.offscreen() + "\n";
+state += "title=" + AutoTest.title() + "\n";
+state += "checksum=" + AutoTest.checksum() + "\n";
+state += "brightness=" + AutoTest.brightness() + "\n";
+state += "shots=" + shots.length + "\n";
+state += "\n--- 逐帧 ---\n" + trace;
+state += "\n--- 引擎日志 ---\n" + AutoTest.log(120);
+AutoTest.write(out + "/state.txt", state);
+AutoTest.quit();

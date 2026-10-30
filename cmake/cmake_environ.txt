@@ -88,6 +88,10 @@ else()
     message(FATAL_ERROR "unsupported: ${CMAKE_SYSTEM_NAME}")
 endif()
 
+if(USE_SDL3 AND NOT OHOS AND ENABLE_AUTOTEST)
+    list(APPEND KRKRSDL_ENVIRON_SRC ${KRKRSDL_ENVIRON_PATH}/sdl3/sdl3_autotest.cpp)
+endif()
+
 if(NOT USE_FFMPEG)
     if(ANDROID)
         list(APPEND KRKRSDL_ENVIRON_SRC ${KRKRSDL_ENVIRON_PATH}/android/android_video.cpp)

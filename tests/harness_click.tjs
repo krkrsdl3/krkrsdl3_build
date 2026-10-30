@@ -1,0 +1,77 @@
+// 交互旅程宿主：稳定若干帧后，按 -at_clicks / -at_keys 依次注入输入，
+// 每一步前后各截一图，并用画面指纹判断这一步到底有没有生效。
+// 由 tests/run.py 通过 -at_harness 加载；
+// 旋钮：-at_out -at_frames（进旅程前稳定的帧数）-at_settle（每步后等多少帧）
+//       -at_clicks="x,y;x,y" -at_keys="RETURN;LEFT" -at_type="文本"
+Plugins.link("autotest.dll");
+
+function knob(name, dflt)
+{
+    var v = System.getArgument(name);
+    if (v == "")
+        return dflt;
+    return v - 0;
+}
+
+var out = System.getArgument("-at_out");
+if (out == "")
+    throw "harness_click.tjs 需要 -at_out=<输出目录>";
+var settle = knob("-at_settle", 30);
+var steps = [];
+
+var clicks = System.getArgument("-at_clicks");
+if (clicks != "")
+{
+    var rows = clicks.split(";");
+    for (var i = 0; i < rows.length; i++)
+    {
+        if (rows[i] == "")
+            continue;
+        var xy = rows[i].split(",");
+        steps.add(%[ kind: "click", x: xy[0] - 0, y: xy[1] - 0,
+                     label: "click" + (i + 1) ]);
+    }
+}
+var keys = System.getArgument("-at_keys");
+if (keys != "")
+{
+    var names = keys.split(";");
+    for (var j = 0; j < names.length; j++)
+    {
+        if (names[j] == "")
+            continue;
+        steps.add(%[ kind: "key", key: names[j], label: "key" + names[j] ]);
+    }
+}
+var text = System.getArgument("-at_type");
+if (text != "")
+    steps.add(%[ kind: "type", text: text, label: "type" ]);
+
+AutoTest.pump(knob("-at_frames", 240));
+
+var report = "size=" + AutoTest.size() + " title=" + AutoTest.title() + "\n";
+for (var s = 0; s < steps.length; s++)
+{
+    var st = steps[s];
+    AutoTest.pump(settle);
+    AutoTest.capture(out + "/" + st.label + "_before.png");
+    var before = AutoTest.checksum();
+
+    if (st.kind == "click")
+        AutoTest.click(st.x, st.y);
+    else if (st.kind == "key")
+        AutoTest.tapKey(st.key, 2);
+    else if (st.kind == "type")
+        AutoTest.type(st.text);
+
+    AutoTest.pump(settle);
+    AutoTest.capture(out + "/" + st.label + "_after.png");
+    var after = AutoTest.checksum();
+
+    report += st.label + " changed=" + (before != after) + " sum=" + before + "->" + after +
+              " lum=" + AutoTest.brightness() + "\n";
+    Debug.message("HARNESS " + st.label + " changed=" + (before != after));
+}
+report += "\n--- 引擎日志 ---\n" + AutoTest.log(120);
+AutoTest.write(out + "/state.txt", report);
+AutoTest.quit();
