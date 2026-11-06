@@ -1,0 +1,35 @@
+# ASan mutation-fuzz targets for the TJS2 front end and byte code loader.
+#
+# llvm-mingw's clang does not accept -fsanitize=fuzzer for the
+# *-windows-gnu target, so the targets are ordinary executables driven by
+# tests/fuzz/fuzz_driver.cpp with ASan enabled.
+#
+#   cmake -DONLYCONSOLE=ON -DTJS2_FUZZERS=ON ...
+#   tjs2_fuzz_source   --seeds <dir of .tjs> --iterations 20000
+#   tjs2_fuzz_bytecode --seeds <dir of .tjs bytecode> --iterations 20000
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_tjs2.txt)
+
+find_package(oniguruma CONFIG REQUIRED)
+
+set(TJS2_FUZZ_FLAGS -fsanitize=address -fno-omit-frame-pointer -g -O1)
+
+add_executable(tjs2_fuzz_source
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_driver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/tjs2_fuzz_source.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_stubs.cpp
+    ${KRKRSDL_TJS2_SRC})
+target_include_directories(tjs2_fuzz_source PRIVATE ${KRKRSDL_TJS2_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cpp/environ)
+target_compile_options(tjs2_fuzz_source PRIVATE ${TJS2_FUZZ_FLAGS})
+target_link_options(tjs2_fuzz_source PRIVATE -fsanitize=address)
+target_link_libraries(tjs2_fuzz_source PRIVATE oniguruma::onig)
+
+add_executable(tjs2_fuzz_bytecode
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_driver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/tjs2_fuzz_bytecode.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_stubs.cpp
+    ${KRKRSDL_TJS2_SRC})
+target_include_directories(tjs2_fuzz_bytecode PRIVATE ${KRKRSDL_TJS2_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cpp/environ)
+target_compile_options(tjs2_fuzz_bytecode PRIVATE ${TJS2_FUZZ_FLAGS})
+target_link_options(tjs2_fuzz_bytecode PRIVATE -fsanitize=address)
+target_link_libraries(tjs2_fuzz_bytecode PRIVATE oniguruma::onig)

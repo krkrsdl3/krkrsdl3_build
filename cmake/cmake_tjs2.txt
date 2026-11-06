@@ -2,7 +2,7 @@ set(KRKRSDL_TJS2_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cpp/tjs2)
 
 set(KRKRSDL_TJS2_SRC
     ${KRKRSDL_TJS2_PATH}/tjs.cpp
-    ${KRKRSDL_TJS2_PATH}/tjs.tab.cpp
+    ${KRKRSDL_TJS2_PATH}/tjsParser.cpp
     ${KRKRSDL_TJS2_PATH}/tjsArray.cpp
     ${KRKRSDL_TJS2_PATH}/tjsBinarySerializer.cpp
     ${KRKRSDL_TJS2_PATH}/tjsByteCodeLoader.cpp
@@ -10,7 +10,6 @@ set(KRKRSDL_TJS2_SRC
     ${KRKRSDL_TJS2_PATH}/tjsConfig.cpp
     ${KRKRSDL_TJS2_PATH}/tjsConstArrayData.cpp
     ${KRKRSDL_TJS2_PATH}/tjsDate.cpp
-    ${KRKRSDL_TJS2_PATH}/tjsdate.tab.cpp
     ${KRKRSDL_TJS2_PATH}/tjsDateParser.cpp
     ${KRKRSDL_TJS2_PATH}/tjsDebug.cpp
     ${KRKRSDL_TJS2_PATH}/tjsDictionary.cpp
@@ -30,7 +29,6 @@ set(KRKRSDL_TJS2_SRC
     ${KRKRSDL_TJS2_PATH}/tjsObject.cpp
     ${KRKRSDL_TJS2_PATH}/tjsObjectExtendable.cpp
     ${KRKRSDL_TJS2_PATH}/tjsOctPack.cpp
-    ${KRKRSDL_TJS2_PATH}/tjspp.tab.cpp
     ${KRKRSDL_TJS2_PATH}/tjsRandomGenerator.cpp
     ${KRKRSDL_TJS2_PATH}/tjsRegExp.cpp
     ${KRKRSDL_TJS2_PATH}/tjsScriptBlock.cpp
