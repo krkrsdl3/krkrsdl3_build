@@ -321,8 +321,10 @@ VK 的 NDC 方向与 SW 的回读行序恰好一致（三后端 `LockTarget` 结
    imageView/描述符集会导致 `VK_ERROR_DEVICE_LOST`，此即早期 device lost 根源）。
 2. **同提交内写后读不可见**：RADV 忽略 GENERAL→GENERAL（无 layout 转换）的
    image barrier，同一 command buffer 内"写入 target 后立即采样"结果未定义。
-   **修复：每次新 pass（`!passActive_`）前无条件 `FlushMeshCommands()`**
-   （提交边界提供完整可见性；每帧绘制次数有限，开销可接受）。
+   **修复：采样"本 command buffer 内刚写入过"的目标前 `FlushMeshCommands()`**
+   （跨提交边界提供可见性）；普通新 pass 不再提交，且同一目标的连续绘制保持
+   同一个 render pass——早期"每次新 pass 都提交并等待"的写法在 D3D 模式下
+   每帧会产生 4~5 次 GPU 同步（实测约 3ms/帧），是 Vulkan 卡顿的主因。
 3. **push constant std140 布局**：网格 `{vec2 viewport@0, enableMask@8,
    enableColor@12, opa@16, pad[3]@20-31, vec4 uniformColor@32}` = 48 字节；
    Layer 合成 `{opa@0, method@4, pad@8, vec4 uniformColor@16}` = 32 字节
