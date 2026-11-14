@@ -103,14 +103,25 @@ if(ENABLE_AUTOTEST)
     add_definitions(-D_KRKRSDL3_AUTOTEST=1)
 endif()
 
+# ================================================================
+#  版本号唯一定义处（Gradle / OHOS 脚本会解析这一行）
+#  正式版: "1.2.3"    预发布: "1.2.3-beta.1" / "-rc.2" / "-alpha.3"
+# ================================================================
+set(KRKRSDL3_VERSION "0.0.7")
+
+if(NOT KRKRSDL3_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)(\\.[0-9]+)?)?$")
+    message(FATAL_ERROR "KRKRSDL3_VERSION 格式必须为 MAJOR.MINOR.PATCH[-alpha|beta|rc[.N]]，当前值: '${KRKRSDL3_VERSION}'")
+endif()
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" KRKRSDL3_VERSION_CORE "${KRKRSDL3_VERSION}")
+
 # 建立项目
 if(ONLYCONSOLE)
-    project(tjs2 VERSION "0.0.6" LANGUAGES C CXX)
+    project(tjs2 VERSION "${KRKRSDL3_VERSION_CORE}" LANGUAGES C CXX)
 else()
     if(IOS OR MACOS)
-        project(krkrsdl3 VERSION "0.0.6" LANGUAGES C CXX OBJC OBJCXX)
+        project(krkrsdl3 VERSION "${KRKRSDL3_VERSION_CORE}" LANGUAGES C CXX OBJC OBJCXX)
     else()
-        project(krkrsdl3 VERSION "0.0.6" LANGUAGES C CXX)
+        project(krkrsdl3 VERSION "${KRKRSDL3_VERSION_CORE}" LANGUAGES C CXX)
     endif()
 endif()
 

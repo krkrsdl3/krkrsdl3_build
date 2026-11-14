@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     krkrsdl3 OpenHarmony 构建 (由 script/build-ohos.bat 调用)
 
@@ -47,6 +47,51 @@ $Triple = if ($Arch -eq "arm64-v8a") { "aarch64-linux-ohos" }
            else { "x86_64-linux-ohos" }
 $Hvigorw = "$SdkRoot\bin\hvigorw.bat"
 $DevEcoNodeHome = "$SdkRoot\tool\node"
+
+# ================================================================
+#  VERSION SYNC
+# ================================================================
+
+# 将根目录 CMakeLists.txt 的 KRKRSDL3_VERSION 同步到 OHOS 版本字段
+function Sync-Version {
+    $cmake = [System.IO.File]::ReadAllText((Join-Path $Root "CMakeLists.txt"))
+    $defMatch = [regex]::Match($cmake, '(?m)^\s*set\(KRKRSDL3_VERSION\s+"([^"]+)"\)')
+    if (-not $defMatch.Success) { throw "CMakeLists.txt 中未找到 KRKRSDL3_VERSION" }
+    $version = $defMatch.Groups[1].Value
+
+    $verMatch = [regex]::Match($version, '^(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)(?:\.(\d+))?)?$')
+    if (-not $verMatch.Success) { throw "非法版本号: '$version'" }
+    $major = [int]$verMatch.Groups[1].Value
+    $minor = [int]$verMatch.Groups[2].Value
+    $patch = [int]$verMatch.Groups[3].Value
+    $stageRank = switch ($verMatch.Groups[4].Value) {
+        "alpha" { 1 }
+        "beta"  { 2 }
+        "rc"    { 3 }
+        default { 9 }
+    }
+    $stageNum = if ($verMatch.Groups[5].Success) { [int]$verMatch.Groups[5].Value } else { 0 }
+    $versionCode = $major * 10000000 + $minor * 100000 + $patch * 1000 + $stageRank * 100 + $stageNum
+
+    $edits = @(
+        @{ Path = "ohos\AppScope\app.json5"; Pattern = '("versionCode"\s*:\s*)\d+'; Value = ('${1}' + $versionCode) },
+        @{ Path = "ohos\AppScope\app.json5"; Pattern = '("versionName"\s*:\s*")[^"]*(")'; Value = ('${1}' + $version + '${2}') },
+        @{ Path = "ohos\oh-package.json5"; Pattern = '(?m)^(\s*"version"\s*:\s*")[^"]*(")'; Value = ('${1}' + $version + '${2}') },
+        @{ Path = "ohos\entry\oh-package.json5"; Pattern = '(?m)^(\s*"version"\s*:\s*")[^"]*(")'; Value = ('${1}' + $version + '${2}') },
+        @{ Path = "ohos\entry\src\main\cpp\types\libkrkrsdl3\oh-package.json5"; Pattern = '("version"\s*:\s*")[^"]*(")'; Value = ('${1}' + $version + '${2}') },
+        @{ Path = "ohos\entry\oh-package-lock.json5"; Pattern = '("name"\s*:\s*"libkrkrsdl3\.so",\s*"version"\s*:\s*")[^"]*(")'; Value = ('${1}' + $version + '${2}') }
+    )
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    foreach ($edit in $edits) {
+        $path = Join-Path $Root $edit.Path
+        if (-not (Test-Path $path)) { continue }
+        $text = [System.IO.File]::ReadAllText($path)
+        $new = [regex]::Replace($text, $edit.Pattern, $edit.Value)
+        if ($new -ne $text) { [System.IO.File]::WriteAllText($path, $new, $utf8) }
+    }
+    Write-Host "  Version: $version (versionCode $versionCode)"
+}
 
 # ================================================================
 #  BUILD COMMANDS
@@ -243,6 +288,9 @@ function Invoke-Deps {
 function Invoke-Hap {
     Write-Host "=== Packaging HAP ==="
     $ohProject = "$Root\ohos"
+    $builtHap = Join-Path $ohProject "entry/build/default/outputs/default/entry-default-unsigned.hap"
+    $hapOutDir = Join-Path (Join-Path $Root "out/ohos") $Arch
+    $hapOut = Join-Path $hapOutDir "krkrsdl3_${Arch}_${BuildType}.hap"
 
     if (-not (Test-Path $Hvigorw)) {
         Write-Host "ERROR: hvigorw not found at $Hvigorw"
@@ -265,16 +313,13 @@ function Invoke-Hap {
             Write-Host "hvigorw exited with code $($p.ExitCode)"
         }
         # 检查产物
-        $hapSrc = "$ohProject\entry\build\default\outputs\default\entry-default-unsigned.hap"
-        if (Test-Path $hapSrc) {
-            $hapDir = "$Root\out\ohos\$Arch"
-            New-Item -ItemType Directory -Force -Path $hapDir | Out-Null
-            $hapDest = "$hapDir\krkrsdl3_${Arch}_${BuildType}.hap"
-            Copy-Item $hapSrc $hapDest -Force
-            $info = Get-Item $hapDest
-            Write-Host "HAP: $hapDest ($([math]::Round($info.Length/1KB,1))KB)"
+        if (Test-Path -LiteralPath $builtHap) {
+            New-Item -ItemType Directory -Force -Path $hapOutDir | Out-Null
+            Copy-Item -LiteralPath $builtHap -Destination $hapOut -Force
+            $info = Get-Item -LiteralPath $hapOut
+            Write-Host "HAP: $hapOut ($([math]::Round($info.Length/1KB,1))KB)"
         } else {
-            Write-Host "WARNING: HAP not found at $hapSrc"
+            Write-Host "WARNING: HAP not found at $builtHap"
         }
     } finally {
         Pop-Location
@@ -295,6 +340,7 @@ Write-Host "    SDK: $SDK"
 if (-not (Test-Path $SDK)) { Write-Host "ERROR: SDK not found at $SDK"; exit 1 }
 
 try {
+    if ($Target -ne "clean") { Sync-Version }
     switch ($Target) {
         "full"  { Invoke-Deps; Invoke-Hap }
         "deps"  { Invoke-Deps }
@@ -303,5 +349,6 @@ try {
     }
 } catch {
     Write-Host "ERROR: $_"
+    Write-Host "LINE: $($_.InvocationInfo.ScriptLineNumber) TEXT: $($_.InvocationInfo.Line)"
     exit 1
 }

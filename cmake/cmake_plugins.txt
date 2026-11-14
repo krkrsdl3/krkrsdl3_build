@@ -53,6 +53,19 @@ set(KRKRSDL_PLUGINS_SRC
     ${KRKRSDL_PLUGINS_PATH}/extrans/turn.cpp
     ${KRKRSDL_PLUGINS_PATH}/extrans/turntrans_table.cpp
     ${KRKRSDL_PLUGINS_PATH}/extrans/wave.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/extNagano.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/3duniversal.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/blurfade.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/book.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/flutter.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/honeyturn.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/imagewipe.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/morphing.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/multiripple.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/rgbfade.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/scanline.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/spin.cpp
+    ${KRKRSDL_PLUGINS_PATH}/extNagano/zoomfade.cpp
     ${KRKRSDL_PLUGINS_PATH}/KAGParserEx/KAG.cpp
     ${KRKRSDL_PLUGINS_PATH}/KAGParserEx/KAGParserEx.cpp
 	${KRKRSDL_PLUGINS_PATH}/ExtKAGParser/ExtKAG.cpp

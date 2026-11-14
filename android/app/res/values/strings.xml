@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">krkrSDL3</string>
-    <string name="app_version">v0.0.6</string>
     <string name="app_about">
         krkrSDL3 游戏启动器 - 基于 Kirikiri SDL3 的视觉小说引擎 \n\n
         使用说明：\n

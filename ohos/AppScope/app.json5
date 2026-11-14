@@ -16,8 +16,8 @@
   "app": {
     "bundleName": "org.lxl.krkrsdl3",
     "vendor": "luxiaoling",
-    "versionCode": 1000000,
-    "versionName": "1.0.0",
+    "versionCode": 7900,
+    "versionName": "0.0.7",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }

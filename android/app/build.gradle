@@ -2,6 +2,24 @@ plugins {
     id 'com.android.application'
 }
 
+// 版本号唯一来源：根目录 CMakeLists.txt 的 KRKRSDL3_VERSION
+def krkrVersionMatch = rootProject.file('../CMakeLists.txt').text =~ /(?m)^\s*set\(KRKRSDL3_VERSION\s+"([^"]+)"\)/
+if (!krkrVersionMatch.find()) {
+    throw new GradleException("CMakeLists.txt 中未找到 KRKRSDL3_VERSION")
+}
+def krkrVersion = krkrVersionMatch.group(1)
+def krkrVersionParts = krkrVersion =~ /^(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)(?:\.(\d+))?)?$/
+if (!krkrVersionParts.matches()) {
+    throw new GradleException("非法版本号: ${krkrVersion}")
+}
+def krkrMajor = krkrVersionParts.group(1) as int
+def krkrMinor = krkrVersionParts.group(2) as int
+def krkrPatch = krkrVersionParts.group(3) as int
+def krkrStage = krkrVersionParts.group(4)
+def krkrStageNum = krkrVersionParts.group(5) ? krkrVersionParts.group(5) as int : 0
+def krkrStageRank = [alpha: 1, beta: 2, rc: 3].get(krkrStage) ?: 9
+def krkrVersionCode = krkrMajor * 10000000 + krkrMinor * 100000 + krkrPatch * 1000 + krkrStageRank * 100 + krkrStageNum
+
 android {
     namespace 'org.tvp.krkrsdl3'
     compileSdk 35
@@ -22,8 +40,9 @@ android {
                 abiFilters 'arm64-v8a', 'armeabi-v7a'
             }
         }
-        versionCode 6
-        versionName '0.0.6'
+        versionCode krkrVersionCode
+        versionName krkrVersion
+        resValue "string", "app_version", "v${krkrVersion}"
     }
     buildTypes {
         release {
