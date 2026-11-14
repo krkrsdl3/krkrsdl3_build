@@ -116,7 +116,7 @@ python tests/run.py --harness tests/harness_click.tjs \
 4. 要更快迭代可以 `--window 640x360`（注意点击坐标随之减半）。
 5. `AutoTest.write` 走引擎文本流，落盘是 UTF-16LE（`run.py` 已按 BOM 自动识别）。
 6. 测试宿主只在 SDL3、非 OHOS 且 `ENABLE_AUTOTEST=ON` 的构建里编译（§0；
-   `cmake/cmake_environ.txt`、`cmake/cmake_plugins.txt`、`_KRKRSDL3_USE_SDL3` / `_KRKRSDL3_AUTOTEST` 宏）。
-   其它平台与 SDL2 构建里，核心侧的调用点由头文件的 `inline` 空实现接住，不需要额外条件编译。
+   `cmake/cmake_environ.txt`、`cmake/cmake_plugins.txt`、`_KRKRSDL3_AUTOTEST` 宏）。
+   OHOS 等非 SDL3 环境里，核心侧的调用点由头文件的 `inline` 空实现接住，不需要额外条件编译。
 7. `-render=vulkan` 下**进程退出时会崩**（0xC0000374，与测试宿主无关：不带任何测试开关、可见窗口跑满
    `-frames` 也一样）。产物在崩溃前已经落盘，所以离屏旅程仍可用，但 `run.py` 的 `exit=` 不是 0。

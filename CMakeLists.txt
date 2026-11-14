@@ -79,8 +79,6 @@ else()
     set(CMAKE_TOOLCHAIN_FILE $ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake)
 endif()
 
-# SDL版本选择: ON=SDL3, OFF=SDL2
-option(USE_SDL3 "Use SDL3 (OFF for SDL2)" ON)
 # 离屏自动化测试宿主（AutoTest / -offscreen / -silent / -frames / -dump / -at_harness）
 # 关掉后所有入口在头文件里内联成空实现，主循环与送显路径不留任何调用开销
 option(ENABLE_AUTOTEST "Build the offscreen AutoTest host (tests/autotest.md)" ON)
@@ -94,11 +92,6 @@ option(USE_RENDER_VK "Vulkan backend" ON)
 option(TJS2_ASAN "Build with AddressSanitizer" OFF)
 # libFuzzer 目标（源解析与字节码加载）
 option(TJS2_FUZZERS "Build libFuzzer targets for tjs2" OFF)
-
-if((ANDROID OR IOS) AND NOT USE_SDL3)
-    # android/iOS由于存在平台入口与触屏层，所以不支持SDL2
-    message(FATAL_ERROR "安卓/iOS 不支持 SDL2 作为硬件后端")
-endif()
 if(ENABLE_AUTOTEST)
     add_definitions(-D_KRKRSDL3_AUTOTEST=1)
 endif()

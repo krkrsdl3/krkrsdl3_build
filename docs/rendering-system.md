@@ -394,8 +394,8 @@ SDL_AppIterate
         └─ backend->EndFrame()               // SwapBuffers / Present
 ```
 
-入口拆分：`sdl3_entry.cpp`（/ `sdl2_entry.cpp`）为薄壳，主逻辑在
-`sdl3_app.cpp`（/ `sdl2_app.cpp`）：参数解析 → 按 `-render` 创建后端
+入口拆分：`sdl3_entry.cpp` 为薄壳，主逻辑在
+`sdl3_app.cpp`：参数解析 → 按 `-render` 创建后端
 （失败自动回退软渲染）→ 启动引擎 → `SDL_AppIterate` 帧循环。
 退出时 `TVPShutdownRenderBackend()` 先于 GL 上下文销毁（GL 后端析构需要上下文仍有效）。
 
@@ -486,7 +486,7 @@ SDL_AppIterate
 | 文件 | 内容 |
 |---|---|
 | `cpp/environ/sdl3/sdl3_app.cpp`（+ `sdl3_entry.cpp` 薄壳） | SDL3 入口：初始化、SDL_AppIterate 帧循环、后端选择 |
-| `cpp/environ/sdl2/sdl2_app.cpp`（+ `sdl2_entry.cpp` 薄壳）、`cpp/environ/ohos/ohos_entry.cpp` | SDL2 / OHOS 入口（同一套后端接口） |
+| `cpp/environ/ohos/ohos_entry.cpp` | OHOS 入口（同一套后端接口） |
 
 ---
 

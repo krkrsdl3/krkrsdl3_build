@@ -15,14 +15,6 @@
         "plutovg",
 
         {
-            "name": "sdl2",
-            "platform": "!ios"
-        },
-        {
-            "name": "sdl2-ttf",
-            "platform": "!ios"
-        },
-        {
             "name": "sdl3",
             "features": ["vulkan"],
             "platform": "!ios & !osx"
