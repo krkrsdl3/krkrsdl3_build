@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """离屏静音跑 krkrsdl3，并把窗口内容/交互结果落成可查的 PNG 与 state.txt。
 
-用法示例：
-  python tests/run.py --game out/testgame/data.xp3 --harness tests/harness_boot.tjs
-  python tests/run.py --game out/testgame/data.xp3 --harness tests/harness_click.tjs --click 640,360
-  python tests/run.py --game out/testgame/data.xp3 --frames 240 --dump-last
+用法示例（--game 指向测试游戏，形如 <测试游戏目录>/data.xp3）：
+  python tests/run.py --game <测试游戏>/data.xp3 --harness tests/harness_boot.tjs
+  python tests/run.py --game <测试游戏>/data.xp3 --harness tests/harness_click.tjs --click 640,360
+  python tests/run.py --game <测试游戏>/data.xp3 --frames 240 --dump-last
 
 旋钮都通过 -at_* 命令行参数传给引擎，脚本宿主（.tjs）用 System.getArgument 读取；
 --arg K=V 可以加任意自定义旋钮。产物默认落在 out/autotest/<时间戳>/。

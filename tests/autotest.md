@@ -77,13 +77,15 @@ TJS2 字面量提醒：数组是 `[a, b]`（`.add()` / `.length`），字典是 
 ## 3. run.py 启动器
 
 ```
-python tests/run.py --game out/testgame/data.xp3 \
+TESTGAME=/path/to/testgame        # 换成你的测试游戏目录
+python tests/run.py --game "$TESTGAME/data.xp3" \
     --harness tests/harness_boot.tjs --frames 2400 --every 400
-python tests/run.py --harness tests/harness_click.tjs \
-    --click 90,310 --key ESCAPE --arg at_settle=90 --dummy
+python tests/run.py --game "$TESTGAME/data.xp3" \
+    --harness tests/harness_click.tjs --click 90,310 --key ESCAPE --arg at_settle=90 --dummy
 ```
 
-常用项：`--game`（默认 `out/testgame/data.xp3`）、`--harness`、`--out`（默认 `out/autotest/<时间戳>`）、
+常用项：`--game`（默认 `out/testgame/data.xp3`，仓库里通常不存在，请用 `--game`
+显式指定测试游戏，如 `"$TESTGAME/data.xp3"`）、`--harness`、`--out`（默认 `out/autotest/<时间戳>`）、
 `--frames`、`--every`、`--click X,Y`（可重复）、`--key NAME`（可重复）、`--type 文本`、
 `--arg K=V`（任意自定义旋钮，转成 `-K=V`）、`--window WxH`、`--renderer`、`--visible`、`--dummy`、
 `--dump-last`、`--dry-run`。
@@ -96,6 +98,10 @@ python tests/run.py --harness tests/harness_click.tjs \
   再把帧号 / 标题 / 指纹 / 亮度逐帧记进 `state.txt`。用来看启动过程在哪一帧变成什么。
 - `tests/harness_click.tjs`：稳定 `-at_frames` 帧后，依次注入 `-at_clicks` / `-at_keys` /
   `-at_type`，每步前后各截一图，`state.txt` 里给出 `changed=0/1` 与前后指纹——这一步到底有没有生效。
+- `tests/harness_perf.tjs`：预热 `-at_every` 帧后用 `System.getTickCount()` 测
+  `-at_frames` 帧墙钟时间，写出 `perf.txt`（`fps` / `msPerFrame`）。用于渲染后端
+  性能对比；须用真正绑定 DrawDeviceD3D 的游戏（如 `<测试游戏目录>/data.xp3`），
+  否则只走软件 RenderManager 看不出后端差异。详见 `docs/rendering.md` §8。
 
 迭代方式：先跑 boot 找到目标画面 → 看图定坐标 → 用 click 旅程带坐标重跑 → 看 `changed` 与前后两图。
 
@@ -118,5 +124,5 @@ python tests/run.py --harness tests/harness_click.tjs \
 6. 测试宿主只在 SDL3、非 OHOS 且 `ENABLE_AUTOTEST=ON` 的构建里编译（§0；
    `cmake/cmake_environ.txt`、`cmake/cmake_plugins.txt`、`_KRKRSDL3_AUTOTEST` 宏）。
    OHOS 等非 SDL3 环境里，核心侧的调用点由头文件的 `inline` 空实现接住，不需要额外条件编译。
-7. `-render=vulkan` 下**进程退出时会崩**（0xC0000374，与测试宿主无关：不带任何测试开关、可见窗口跑满
-   `-frames` 也一样）。产物在崩溃前已经落盘，所以离屏旅程仍可用，但 `run.py` 的 `exit=` 不是 0。
+7. `-render=vulkan` 的退出崩溃（原 0xC0000374 堆损坏）已修复：三个后端正常退出 `exit=0`。
+   若再次出现非 0 退出码，先查是否有新增的重复释放（Target 的采样包装、mesh 资源）。

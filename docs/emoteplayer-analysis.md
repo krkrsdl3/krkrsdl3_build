@@ -1,6 +1,6 @@
 # emoteplayer 插件解读
 
-> 面向贡献者：本文解读 `cpp/plugins/emoteplayer/`（约 7400 行）的架构与渲染方式——
+> 面向贡献者：本文解读 `cpp/plugins/emoteplayer/`（约 7800 行）的架构与渲染方式——
 > 资源解析、动画状态机、网格计算、与引擎渲染抽象的边界。改这个插件前先读本文。
 
 ---
@@ -18,7 +18,8 @@ emoteplayer 是一个 **Live2D 式（EMOTE/PSB 格式）动画播放器插件**�
 - 文件结构：
   - `emotefile.{h,cpp}`：PSB 资源解析（压缩/加密/调色板/对象树/图标位图）
   - `emoterunner.{h,cpp}`：动画状态机（progress 构建渲染引用树）+ 网格计算 + 绘制入口
-  - `emoteplayerclass.{h,cpp}`：TJS 脚本接口（EmotePlayer / SeparateLayerAdaptor）
+  - `emoteplayerclass.{h,cpp}`：TJS 脚本接口（EmotePlayer / SeparateLayerAdaptor）+ `draw`/`drawToTarget`
+  - `emotegeometry.h` / `emotephysics.h` / `emoteframeselect.h`：网格几何、物理（风/摇摆）、帧选择
   - `emoteplayer.cpp`：ncbind 插件注册
 
 ## 2. 动画数据流（两阶段模型）
@@ -47,8 +48,15 @@ emoteplayer 是一个 **Live2D 式（EMOTE/PSB 格式）动画播放器插件**�
   `checkDrawArea`）。
 - **蒙版**：`hasStencil` 节点先把蒙版层画进蒙版目标，再 `SetMask` 过滤主体
   （alpha>=128 有效），与后端的蒙版语义一致。
-- **混合**：`SetBlendMode(bm)`（0 普通 / 1,4 乘色 / 3 加色 / 21 纯色替换 / 6 跳过），
-  网格顶点直接传递 `_meshVertices`。
+- **混合**：一次 `SetBlend(blendMode, totalOpa, uniformColor, colorModulation)`
+  定状态（emote 区间：0 普通 / 1,4 乘色 / 3 加色 / 21 纯色替换 / 6 跳过）：
+  - `totalOpa` = 当前节点链上各层 opacity 的乘积，同时传给 `DrawMesh` 的 opacity；
+  - `blendMode==21` 时 `uniformColor` 取帧的 `color`；
+  - 其它模式帧 `color` 是**乘性染色**，走 `colorModulation`；
+    `0xff808080` 是 PSB 中性灰、`hasColor=false` 时都必须保持 identity(1,1,1,1)，
+    否则会把虹膜之类乘成灰/黑。
+- **顶点变换**：节点网格顶点按 `projection * _targetTrans * _affineTrans` 变换后
+  交给 `DrawMesh`（`_meshVertices` 的交错 `{x,y,u,v}` 布局与接口一致，直接传指针）。
 - **回读输出**：`LockTarget` 取 CPU 像素（GL 经 glReadPixels、软渲染零拷贝、
   Vulkan 经 staging）→ memcpy 进 `ths->GetMainImagePixelBufferForWrite()` → `Update()`，
   让引擎把这一层合成进最终画面。
@@ -84,6 +92,6 @@ emoteplayer 是一个 **Live2D 式（EMOTE/PSB 格式）动画播放器插件**�
 |---|---|
 | 动画插值/参数化/时间轴 | `emoterunner.cpp` 的 progress 系列 |
 | 网格细分密度/贝塞尔求值 | `buildSubdivMesh` / `evaluateSurfaceChain`（emoterunner.cpp） |
-| 混合/蒙版语义 | 后端 `SetBlendMode` / `SetMask`（core/render/backend/）与插件 draw 调用处 |
+| 混合/蒙版语义 | 后端 `SetBlend` / `SetMask`（core/render/backend/）与插件 draw 调用处 |
 | 输出方式（去回读直通 GPU） | `EmotePlayer::drawToTarget`（emoteplayerclass.cpp，已实现，D3DEmotePlayer 使用） |
 | 图标格式/解码 | `emotefile.cpp` 的 readIconTobuffer / ensureLoad |

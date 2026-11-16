@@ -77,7 +77,7 @@ SDL 事件 → environ/*_app.cpp
 
 ## 5. 统一呈现入口
 
-TVPWindow 只提供一个呈现入口（见 `docs/gpu-readback-design.md` §2.2 A1）：
+TVPWindow 只提供一个呈现入口（见 `docs/rendering.md` §4）：
 
 ```
 TVPWindow::PresentTexture(void* texture, tjs_int w, tjs_int h)
@@ -104,7 +104,3 @@ TVPWindow::PresentTexture(void* texture, tjs_int w, tjs_int h)
 | `cpp/core/main/TVPWindow.h/.cpp` | TVPWindow 引擎核心 + 输入事件类 + 窗口枚举 |
 | `cpp/core/main/WindowManager.h/.cpp` | 窗口列表 + scancode 状态 + KRKR_Trig_* 事件分发 |
 | `cpp/core/render/transhandler.h` | 转场 handler 接口（未变） |
-
-> 历史说明：旧架构为 `WindowIntf.*`（tTJSNI_BaseWindow/tTJSNI_Window）+
-> `MainWindowLayer.*`（TVPWindowLayer，iWindowLayer 实现）+ 抽象接口
-> `iTVPWindow`/`iWindowLayer` 的多层链条；重构后合并为上述三层。
