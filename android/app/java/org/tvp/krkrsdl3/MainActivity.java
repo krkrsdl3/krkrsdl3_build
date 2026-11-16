@@ -74,7 +74,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String COLOR_EXTDIR = "#FFD4E157";
     public static final String SHAREDPREF_NAME = "krkrsdl";
     public static final String SHAREDPREF_GAMEDIR = "gamedir";
-    public static final String SHAREDPREF_GAMECONFIG = "gameargs";
+    private static final String PREF_GAMEARGS = "gameargs";
 
     private enum DIR_TYPE {
         NOT_DIR, NORMAL_DIR, SAF_DIR
@@ -1389,10 +1389,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startkrkrsdl(ArrayList<String> m_gameargs, boolean usesaf) {
-        Intent intent = new Intent();
-        intent.setClass(this, KRKRActivity.class);
-        intent.putStringArrayListExtra(SHAREDPREF_GAMECONFIG, m_gameargs);
-        startActivity(intent);
+        startActivity(KRKRActivity.createIntent(this, m_gameargs));
     }
 
     /**
@@ -1840,7 +1837,7 @@ public class MainActivity extends AppCompatActivity {
 
         try {
             if (init) {
-                String jsonstr = m_sharedpref.getString(SHAREDPREF_GAMECONFIG, null);
+                String jsonstr = m_sharedpref.getString(PREF_GAMEARGS, null);
                 if (jsonstr == null) m_gameargs = new JSONObject();
                 else m_gameargs = new JSONObject(jsonstr);
 
@@ -1864,7 +1861,7 @@ public class MainActivity extends AppCompatActivity {
                 m_gameargs.put("scopedsavedir", button_scopedsavedir.isChecked());
                 m_gameargs.put("alloweditargs", button_alloweditargs.isChecked());
 
-                m_sharedpref.edit().putString(SHAREDPREF_GAMECONFIG, m_gameargs.toString()).apply();
+                m_sharedpref.edit().putString(PREF_GAMEARGS, m_gameargs.toString()).apply();
             }
         } catch (JSONException e) {
             Log.e("## krkrsdl_android", e.toString());
